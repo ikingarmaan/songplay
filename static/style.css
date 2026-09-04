@@ -448,23 +448,27 @@ img { display: block; max-width: 100%; }
 
 .dev-badge {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  padding: 4px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-soft);
+  padding: 6px 14px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border-hi);
   border-radius: 999px;
   letter-spacing: 0.2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .dev-badge strong {
-  color: var(--text);
+  color: var(--accent);
+  font-weight: 700;
 }
 
 /* page footer */
 .page-footer {
   max-width: 1320px; margin: 40px auto 0;
-  padding: 24px 40px 40px;
+  padding: 32px 24px 130px; /* ample bottom padding so the fixed player never covers the footer */
   text-align: center;
   color: var(--muted); font-size: 13px;
   border-top: 1px solid var(--border);
@@ -474,35 +478,39 @@ img { display: block; max-width: 100%; }
   align-items: center;
   gap: 6px;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--text);
-  margin-bottom: 8px;
-  padding: 6px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  margin-bottom: 12px;
+  padding: 8px 20px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border-hi);
   border-radius: 999px;
+  box-shadow: var(--shadow-sm);
 }
 .footer-dev strong {
-  background: linear-gradient(135deg, var(--brand), #a06bff);
+  color: var(--accent-2);
+  background: var(--grad);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
+  display: inline-block;
   font-weight: 700;
 }
 .footer-copy {
-  margin: 6px 0 14px;
+  margin: 6px 0 16px;
   color: var(--muted);
   font-size: 13px;
 }
 .disclaimer-box {
   max-width: 900px;
-  margin: 14px auto 0;
-  padding: 14px 18px;
-  background: color-mix(in srgb, var(--surface) 40%, transparent);
+  margin: 16px auto 0;
+  padding: 16px 20px;
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 11px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--muted);
   text-align: left;
 }
