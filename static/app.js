@@ -153,7 +153,7 @@ function renderResults(tracks) {
       </div>
       <button class="add-btn" aria-label="Add to queue" title="Add to queue">+</button>
       <div class="name">${esc(t.title)}</div>
-      <div class="sub">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</div>
+      <div class="sub">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}${t.duration_ms ? ' · ' + fmt(t.duration_ms / 1000) : ''}</div>
     `;
     card.querySelector('.art').addEventListener('click', () => playFromResults(i));
     card.querySelector('.add-btn').addEventListener('click', (e) => {
@@ -212,6 +212,9 @@ function playFromResults(i) {
 function playCurrent() {
   const t = state.queue[state.currentIdx];
   if (!t) return;
+  if (t.duration_ms) {
+    els.durTime.textContent = fmt(t.duration_ms / 1000);
+  }
   audio.src = t.preview;
   audio.play().then(() => {
     state.isPlaying = true;
@@ -317,6 +320,14 @@ audio.addEventListener('timeupdate', () => {
 audio.addEventListener('loadedmetadata', () => { els.durTime.textContent = fmt(audio.duration); });
 audio.addEventListener('play',  () => { state.isPlaying = true;  updatePlayerUI(); });
 audio.addEventListener('pause', () => { state.isPlaying = false; updatePlayerUI(); });
+audio.addEventListener('error', () => {
+  if (state.queue.length > 1) {
+    showToast('Track unavailable, playing next...');
+    setTimeout(nextTrack, 1000);
+  } else {
+    showToast('Unable to stream this track.');
+  }
+});
 
 /* progress seek */
 function seekFromEvent(e) {

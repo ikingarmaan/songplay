@@ -1,12 +1,13 @@
 # SongPlay 🎧
 
-A single-page music player with a polished glassmorphism + neon theme. Search any song, artist, or mood and stream 30-second previews instantly. **No login. No tracking. No nonsense.**
+A single-page music player with a polished glassmorphism + neon theme. Search any song, artist, or mood and stream **full songs for free with unlimited playback**. **No login. No tracking. No nonsense.**
 
 ![Status](https://img.shields.io/badge/status-live-brightgreen) ![Python](https://img.shields.io/badge/Python-3.11+-blue) ![Flask](https://img.shields.io/badge/Flask-3.0-green) ![License](https://img.shields.io/badge/license-MIT-purple)
 
 ## ✨ Features
 
-- 🔍 **Smart search** — type any song, artist, or mood and get up to 50 matching tracks with album art
+- 🎵 **Full songs for free** — unlimited streaming of complete tracks in crystal-clear high bitrate (160kbps AAC audio)
+- 🔍 **Smart search** — type any song, artist, or mood and get matching tracks with high-res 500x500 album art
 - 🎚️ **Full media player** — play/pause, next/prev, shuffle, loop, seekable progress bar, volume slider with mute
 - 📀 **Animated vinyl disc** that spins while music plays
 - ➕ **Queue panel** — add/remove tracks, jump to any track with one click
@@ -22,8 +23,8 @@ A single-page music player with a polished glassmorphism + neon theme. Search an
 
 ```
 songplay/
-├── app.py                # Flask web service
-├── requirements.txt      # Python deps
+├── app.py                # Flask web service & stream decryptor
+├── requirements.txt      # Python deps (Flask, pycryptodome, requests, etc.)
 ├── render.yaml           # Render deployment
 ├── Procfile              # process model
 ├── runtime.txt           # Python version
@@ -35,19 +36,18 @@ songplay/
     └── favicon.svg
 ```
 
-The browser **never** talks to Apple directly. Our Flask backend:
-1. Proxies the free iTunes Search API
-2. Normalizes the response (cleaner schema, no leaky fields)
-3. Caches results in-memory for 30 minutes
-4. Exposes curated mood packs via `/api/suggest`
-
-This means the front-end is decoupled, easier to test, and ready to swap in additional sources (YouTube, Deezer, etc.) later.
+The Flask backend:
+1. Resolves high-fidelity full tracks via JioSaavn's public CDN audio streams
+2. Decrypts CDN media streams on the fly to direct seekable AAC streams
+3. Provides fallback to iTunes for comprehensive global catalog coverage
+4. Caches results in-memory for 30 minutes for instantaneous repeat queries
+5. Exposes curated mood packs via `/api/suggest`
 
 ## 🛠️ Tech
 
-- **Backend:** Flask 3, gunicorn, requests, flask-caching
+- **Backend:** Flask 3, gunicorn, requests, flask-caching, pycryptodome / cryptography
 - **Frontend:** Vanilla HTML/CSS/JS — no frameworks, no build step
-- **Data:** [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/) (free, no key)
+- **Audio:** High-bitrate 160kbps AAC streaming with instant seek support
 - **Fonts:** Inter + Space Grotesk (Google Fonts)
 
 ## 🚀 Run locally
