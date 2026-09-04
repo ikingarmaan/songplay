@@ -549,11 +549,45 @@ function showToast(msg) {
 }
 
 /* =====================================================================
-   Auth & Playlists
+   Auth & Playlists with Resilient Local-First Auto-Sync
    ===================================================================== */
 let authMode = 'login';
 let targetTrackForPlaylist = null;
 let currentViewingPlaylistId = null;
+
+const LOCAL_STORAGE_ACCOUNT_KEY = 'songplay_saved_account_v1';
+
+function getStoredAccount() {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_ACCOUNT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveLocalAccount(user, passwordCred = null) {
+  if (!user || !user.username) return;
+  try {
+    const prev = getStoredAccount() || {};
+    const payload = {
+      username: user.username,
+      user_token: user.user_token || prev.user_token || '',
+      password_cred: passwordCred !== null ? passwordCred : (prev.password_cred || ''),
+      playlists: state.playlists && state.playlists.length > 0 ? state.playlists : (prev.playlists || []),
+      last_active: Date.now()
+    };
+    localStorage.setItem(LOCAL_STORAGE_ACCOUNT_KEY, JSON.stringify(payload));
+  } catch (e) {
+    console.warn('Could not save account to localStorage:', e);
+  }
+}
+
+function clearLocalAccount() {
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_ACCOUNT_KEY);
+  } catch (e) {}
+}
 
 const authEls = {
   openBtn: $('openAuthBtn'),
@@ -570,6 +604,7 @@ const authEls = {
   sub: $('authModalSubtitle'),
   username: $('authUsername'),
   password: $('authPassword'),
+  rememberMe: $('authRememberMe'),
   submitBtn: $('authSubmitBtn'),
   errorMsg: $('authErrorMsg'),
   gateCard: $('playlistsAuthGate'),
@@ -623,10 +658,26 @@ function setAuthMode(mode) {
 
 function openAuth(mode = 'login') {
   setAuthMode(mode);
-  authEls.username.value = '';
-  authEls.password.value = '';
+  const saved = getStoredAccount();
+  if (saved && saved.username) {
+    authEls.username.value = saved.username;
+    if (saved.password_cred) {
+      authEls.password.value = saved.password_cred;
+    } else {
+      authEls.password.value = '';
+    }
+  } else {
+    authEls.username.value = '';
+    authEls.password.value = '';
+  }
   authEls.modal.hidden = false;
-  setTimeout(() => authEls.username.focus(), 80);
+  setTimeout(() => {
+    if (authEls.username.value) {
+      authEls.password.focus();
+    } else {
+      authEls.username.focus();
+    }
+  }, 80);
 }
 function closeAuth() {
   authEls.modal.hidden = true;
@@ -653,19 +704,35 @@ authEls.form?.addEventListener('submit', async (e) => {
   const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
 
   try {
+    const payload = { username, password };
+    if (authMode === 'login') {
+      const stored = getStoredAccount();
+      if (stored) {
+        payload.clientBackup = stored;
+      }
+    }
+
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) {
       throw new Error(data.error || 'Authentication failed');
     }
     state.user = data.user;
+    const shouldRemember = authEls.rememberMe ? authEls.rememberMe.checked : true;
+    if (shouldRemember) {
+      saveLocalAccount(data.user, password);
+    }
     updateUserUI();
     closeAuth();
-    showToast(authMode === 'login' ? `Welcome back, ${data.user.username}!` : `Account created! Welcome, ${data.user.username}`);
+    if (data.restored) {
+      showToast(`Welcome back, ${data.user.username}! Account & playlists restored.`);
+    } else {
+      showToast(authMode === 'login' ? `Welcome back, ${data.user.username}!` : `Account created! Welcome, ${data.user.username}`);
+    }
     loadPlaylists();
   } catch (err) {
     authEls.errorMsg.textContent = err.message;
@@ -679,6 +746,7 @@ authEls.logoutBtn?.addEventListener('click', async () => {
   try {
     await fetch('/api/auth/logout', { method: 'POST' });
   } catch (e) {}
+  clearLocalAccount();
   state.user = null;
   state.playlists = [];
   updateUserUI();
@@ -710,29 +778,67 @@ async function checkAuth() {
     if (data.authenticated && data.user) {
       state.user = data.user;
       updateUserUI();
-      loadPlaylists();
-    } else {
-      state.user = null;
-      updateUserUI();
+      await loadPlaylists();
+      saveLocalAccount(data.user);
+      return;
     }
   } catch (err) {
-    console.error('Failed to verify session:', err);
-    state.user = null;
-    updateUserUI();
+    console.warn('Session check failed, trying auto-restore:', err);
   }
+
+  // If server session is unauthenticated (e.g. cloud container redeploy / browser restart),
+  // check if this device has saved credentials / token / playlists in localStorage
+  const saved = getStoredAccount();
+  if (saved && saved.username && (saved.user_token || saved.password_cred)) {
+    try {
+      const syncRes = await fetch('/api/auth/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: saved.username,
+          password_cred: saved.password_cred,
+          user_token: saved.user_token,
+          playlists: saved.playlists || []
+        })
+      });
+      const syncData = await syncRes.json();
+      if (syncRes.ok && syncData.authenticated && syncData.user) {
+        state.user = syncData.user;
+        updateUserUI();
+        await loadPlaylists();
+        saveLocalAccount(syncData.user);
+        if (syncData.restored) {
+          showToast(`Welcome back, ${syncData.user.username}! Your playlists were recovered.`);
+        }
+        return;
+      }
+    } catch (syncErr) {
+      console.error('Auto-login sync error:', syncErr);
+    }
+  }
+
+  state.user = null;
+  updateUserUI();
 }
 
 /* Playlists Operations */
 async function loadPlaylists() {
   if (!state.user) return;
   try {
-    const res = await fetch('/api/playlists');
-    if (!res.ok) return;
+    const res = await fetch('/api/playlists?include_tracks=1');
+    if (!res.ok) throw new Error('Failed to fetch playlists');
     const data = await res.json();
     state.playlists = data.playlists || [];
     renderPlaylists();
+    saveLocalAccount(state.user);
   } catch (err) {
     console.error('Failed to load playlists:', err);
+    // Offline / redeploy fallback: populate from local backup if available
+    const saved = getStoredAccount();
+    if (saved && saved.playlists && saved.playlists.length > 0 && (!state.playlists || state.playlists.length === 0)) {
+      state.playlists = saved.playlists;
+      renderPlaylists();
+    }
   }
 }
 

@@ -12,9 +12,11 @@ import json
 import logging
 import os
 import re
+import secrets
 import sqlite3
 import time
 import warnings
+from datetime import timedelta
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -32,9 +34,18 @@ from flask_caching import Cache
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # ---------------------------------------------------------------------------
-# Config & Database
+# Config & Database Resolution
 # ---------------------------------------------------------------------------
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "songplay.db")
+def get_db_path() -> str:
+    """Resolve database path, checking persistent volume mounts before local fallback."""
+    if os.environ.get("DATABASE_PATH"):
+        return os.environ["DATABASE_PATH"]
+    for candidate in ["/var/data", "/data", "/mnt/data"]:
+        if os.path.isdir(candidate) and os.access(candidate, os.W_OK):
+            return os.path.join(candidate, "songplay.db")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "songplay.db")
+
+DB_PATH = get_db_path()
 
 SAAVN_ENDPOINT = "https://www.jiosaavn.com/api.php"
 SAAVN_HEADERS = {
@@ -52,6 +63,7 @@ MAX_LIMIT = 50
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = os.environ.get("SECRET_KEY", "songplay-session-key-dev-2026")
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=365)
 app.config["CACHE_TYPE"] = "SimpleCache"
 app.config["CACHE_DEFAULT_TIMEOUT"] = CACHE_TTL
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -76,9 +88,24 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL COLLATE NOCASE,
                 password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                user_token TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Backward-compatible column migration
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN user_token TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_token ON users (user_token)")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN last_login TIMESTAMP")
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS playlists (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -506,7 +533,7 @@ def get_current_user() -> dict[str, Any] | None:
         return None
     try:
         with get_db() as conn:
-            user = conn.execute("SELECT id, username, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+            user = conn.execute("SELECT id, username, user_token, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
             if user:
                 return dict(user)
     except Exception as exc:
@@ -528,11 +555,12 @@ def api_register() -> Response:
         return jsonify({"error": "Password must be at least 4 characters"}), 400
 
     password_hash = generate_password_hash(password)
+    user_token = secrets.token_hex(24)
     try:
         with get_db() as conn:
             cur = conn.execute(
-                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                (username, password_hash)
+                "INSERT INTO users (username, password_hash, user_token) VALUES (?, ?, ?)",
+                (username, password_hash, user_token)
             )
             user_id = cur.lastrowid
             # Create a default "Favorites" playlist for new users
@@ -541,9 +569,11 @@ def api_register() -> Response:
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username is already taken"}), 409
 
+    session.permanent = True
     session["user_id"] = user_id
     session["username"] = username
-    return jsonify({"status": "ok", "user": {"id": user_id, "username": username}})
+    session["user_token"] = user_token
+    return jsonify({"status": "ok", "user": {"id": user_id, "username": username, "user_token": user_token}})
 
 
 @app.post("/api/auth/login")
@@ -551,18 +581,176 @@ def api_login() -> Response:
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
+    client_backup = data.get("clientBackup") or {}
 
     if not username or not password:
         return jsonify({"error": "Please enter both username and password"}), 400
 
     with get_db() as conn:
-        user = conn.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,)).fetchone()
-        if not user or not check_password_hash(user["password_hash"], password):
+        user = conn.execute(
+            "SELECT id, username, password_hash, user_token FROM users WHERE username = ?",
+            (username,)
+        ).fetchone()
+
+        if not user:
+            # Check if this user was registered on this device and lost due to ephemeral deploy
+            if client_backup and (client_backup.get("username") or "").strip().lower() == username.lower():
+                user_token = client_backup.get("user_token") or secrets.token_hex(24)
+                cur = conn.execute(
+                    "INSERT INTO users (username, password_hash, user_token) VALUES (?, ?, ?)",
+                    (username, generate_password_hash(password), user_token)
+                )
+                user_id = cur.lastrowid
+                backup_pls = client_backup.get("playlists") or []
+                for pl in backup_pls:
+                    p_cur = conn.execute("INSERT INTO playlists (user_id, name) VALUES (?, ?)", (user_id, pl.get("name") or "Favorites"))
+                    new_pl_id = p_cur.lastrowid
+                    for trk in (pl.get("tracks") or []):
+                        conn.execute("""
+                            INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, album, cover, preview, duration_ms)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            new_pl_id,
+                            trk.get("track_id") or trk.get("id") or "trk",
+                            trk.get("title") or "Unknown Title",
+                            trk.get("artist") or "Unknown Artist",
+                            trk.get("album") or "",
+                            trk.get("cover") or "",
+                            trk.get("preview") or "",
+                            trk.get("duration_ms") or 180000,
+                        ))
+                if not backup_pls:
+                    conn.execute("INSERT INTO playlists (user_id, name) VALUES (?, ?)", (user_id, "Favorites"))
+                conn.commit()
+
+                session.permanent = True
+                session["user_id"] = user_id
+                session["username"] = username
+                session["user_token"] = user_token
+                log.info("Restored user '%s' from client backup during login", username)
+                return jsonify({
+                    "status": "ok",
+                    "restored": True,
+                    "user": {"id": user_id, "username": username, "user_token": user_token}
+                })
+
             return jsonify({"error": "Invalid username or password"}), 401
 
+        if not check_password_hash(user["password_hash"], password):
+            return jsonify({"error": "Invalid username or password"}), 401
+
+        user_token = user["user_token"]
+        if not user_token:
+            user_token = secrets.token_hex(24)
+            conn.execute("UPDATE users SET user_token = ?, last_login = CURRENT_TIMESTAMP WHERE id = ?", (user_token, user["id"]))
+        else:
+            conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", (user["id"],))
+        conn.commit()
+
+        session.permanent = True
         session["user_id"] = user["id"]
         session["username"] = user["username"]
-        return jsonify({"status": "ok", "user": {"id": user["id"], "username": user["username"]}})
+        session["user_token"] = user_token
+        return jsonify({
+            "status": "ok",
+            "user": {"id": user["id"], "username": user["username"], "user_token": user_token}
+        })
+
+
+@app.post("/api/auth/sync")
+def api_auth_sync() -> Response:
+    """Seamless session & account auto-sync.
+    Survives container rebuilds / cloud redeploys by recovering users and playlists from client storage.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password_cred = (data.get("password_cred") or "").strip()
+    user_token = (data.get("user_token") or "").strip()
+    backup_playlists = data.get("playlists") or []
+
+    if not username:
+        return jsonify({"authenticated": False, "error": "Missing username"}), 400
+
+    with get_db() as conn:
+        user = conn.execute(
+            "SELECT id, username, password_hash, user_token FROM users WHERE username = ?",
+            (username,)
+        ).fetchone()
+
+        restored = False
+        user_id = None
+
+        if user:
+            # Check user token or password match
+            valid = False
+            if user_token and user["user_token"] and user["user_token"] == user_token:
+                valid = True
+            elif password_cred and check_password_hash(user["password_hash"], password_cred):
+                valid = True
+            elif user["user_token"] is None and password_cred:
+                valid = check_password_hash(user["password_hash"], password_cred)
+
+            if not valid:
+                return jsonify({"authenticated": False, "error": "Credentials do not match"}), 401
+
+            user_id = user["id"]
+            assigned_token = user["user_token"] or user_token or secrets.token_hex(24)
+            conn.execute("UPDATE users SET user_token = ?, last_login = CURRENT_TIMESTAMP WHERE id = ?", (assigned_token, user_id))
+            conn.commit()
+        else:
+            # User was wiped by cloud container rebuild / deploy
+            if not password_cred and not user_token:
+                return jsonify({"authenticated": False, "error": "Account not found on server"}), 404
+
+            p_hash = generate_password_hash(password_cred) if password_cred else generate_password_hash(user_token)
+            assigned_token = user_token or secrets.token_hex(24)
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, user_token) VALUES (?, ?, ?)",
+                (username, p_hash, assigned_token)
+            )
+            user_id = cur.lastrowid
+            restored = True
+            log.info("Auto-restored user '%s' (id=%s) after server redeployment", username, user_id)
+
+            for pl in backup_playlists:
+                pl_name = (pl.get("name") or "Favorites").strip()
+                p_cur = conn.execute("INSERT INTO playlists (user_id, name) VALUES (?, ?)", (user_id, pl_name))
+                new_pl_id = p_cur.lastrowid
+                for trk in (pl.get("tracks") or []):
+                    conn.execute("""
+                        INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, album, cover, preview, duration_ms)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        new_pl_id,
+                        trk.get("track_id") or trk.get("id") or "trk",
+                        trk.get("title") or "Unknown Title",
+                        trk.get("artist") or "Unknown Artist",
+                        trk.get("album") or "",
+                        trk.get("cover") or "",
+                        trk.get("preview") or "",
+                        trk.get("duration_ms") or 180000,
+                    ))
+
+            if not backup_playlists:
+                conn.execute("INSERT INTO playlists (user_id, name) VALUES (?, ?)", (user_id, "Favorites"))
+
+            conn.commit()
+
+        session.permanent = True
+        session["user_id"] = user_id
+        session["username"] = username
+        session["user_token"] = assigned_token
+
+        return jsonify({
+            "authenticated": True,
+            "status": "ok",
+            "restored": restored,
+            "user": {
+                "id": user_id,
+                "username": username,
+                "user_token": assigned_token
+            }
+        })
 
 
 @app.post("/api/auth/logout")
@@ -576,7 +764,14 @@ def api_me() -> Response:
     user = get_current_user()
     if not user:
         return jsonify({"authenticated": False, "user": None})
-    return jsonify({"authenticated": True, "user": user})
+    return jsonify({
+        "authenticated": True,
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "user_token": user.get("user_token")
+        }
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -587,6 +782,8 @@ def api_get_playlists() -> Response:
     user = get_current_user()
     if not user:
         return jsonify({"error": "Sign in to access your playlists"}), 401
+
+    include_tracks = request.args.get("include_tracks") == "1"
 
     with get_db() as conn:
         rows = conn.execute("""
@@ -599,7 +796,20 @@ def api_get_playlists() -> Response:
             GROUP BY p.id
             ORDER BY p.id ASC
         """, (user["id"],)).fetchall()
-        return jsonify({"playlists": [dict(r) for r in rows]})
+
+        playlists = [dict(r) for r in rows]
+
+        if include_tracks:
+            for pl in playlists:
+                tracks = conn.execute("""
+                    SELECT track_id, title, artist, album, cover, preview, duration_ms, added_at
+                    FROM playlist_tracks
+                    WHERE playlist_id = ?
+                    ORDER BY id ASC
+                """, (pl["id"],)).fetchall()
+                pl["tracks"] = [dict(t) for t in tracks]
+
+        return jsonify({"playlists": playlists})
 
 
 @app.post("/api/playlists")

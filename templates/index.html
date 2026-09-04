@@ -295,6 +295,10 @@
             <label for="authPassword">Password</label>
             <input type="password" id="authPassword" placeholder="Enter your password" required autocomplete="current-password" />
           </div>
+          <div class="field-inline" style="display: flex; align-items: center; gap: 8px; margin: 12px 0 16px; font-size: 13px; color: var(--muted, #94a3b8);">
+            <input type="checkbox" id="authRememberMe" checked style="accent-color: var(--accent, #6366f1); width: 16px; height: 16px; cursor: pointer;" />
+            <label for="authRememberMe" style="cursor: pointer; user-select: none;">Stay signed in &amp; remember on this device</label>
+          </div>
           <div class="auth-error" id="authErrorMsg" hidden></div>
           <button type="submit" class="btn btn-primary btn-block" id="authSubmitBtn">
             <span>Sign In</span>
