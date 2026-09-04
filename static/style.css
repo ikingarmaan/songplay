@@ -725,46 +725,6 @@ img { display: block; max-width: 100%; }
 @keyframes loadPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* ============================================================
-   Responsive
-   ============================================================ */
-@media (max-width: 960px) {
-  .hero { grid-template-columns: 1fr; padding: 48px 24px 30px; text-align: center; }
-  .hero-text { max-width: 600px; margin: 0 auto; }
-  .lede { margin-left: auto; margin-right: auto; }
-  .search { margin: 0 auto; }
-  .chips { justify-content: center; }
-  .hero-art { max-width: 280px; }
-  .section { padding: 24px; }
-  .topbar { padding: 14px 20px; }
-  .topnav { display: none; }
-}
-
-@media (max-width: 720px) {
-  body { padding-bottom: auto; }
-  .player {
-    grid-template-columns: 1fr auto;
-    grid-template-areas: "left right" "center center";
-    padding: 10px 14px;
-    gap: 10px;
-  }
-  .player-left { grid-area: left; }
-  .player-right { grid-area: right; }
-  .player-center { grid-area: center; }
-  .player-right .volume { display: none; }
-  .hide-mobile { display: none; }
-  .only-mobile { display: grid; }
-  .cover { width: 48px; height: 48px; }
-  .ctrl { width: 36px; height: 36px; }
-  .ctrl.play { width: 42px; height: 42px; }
-  .topbar { padding: 12px 16px; }
-  .brand-text em { display: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-}
-
-/* ============================================================
    Button Variants & Auth UI
    ============================================================ */
 .btn-sm { padding: 8px 16px; font-size: 13px; }
@@ -1154,5 +1114,429 @@ img { display: block; max-width: 100%; }
 .fs-volume {
   width: 100px;
 }
+
+/* ============================================================
+   Responsive Design & Mobile Optimization
+   (Desktop layout remains 100% untouched)
+   ============================================================ */
+
+/* Tablet & Intermediate Viewports */
+@media (max-width: 960px) {
+  .hero { grid-template-columns: 1fr; padding: 48px 24px 30px; text-align: center; }
+  .hero-text { max-width: 600px; margin: 0 auto; }
+  .lede { margin-left: auto; margin-right: auto; }
+  .search { margin: 0 auto; }
+  .chips { justify-content: center; }
+  .hero-art { max-width: 280px; }
+  .section { padding: 28px 24px; }
+  .topbar { padding: 14px 20px; }
+  .topnav { display: none; }
+}
+
+/* Tablets & Mobile Devices (<= 768px) */
+@media (max-width: 768px) {
+  /* Prevent horizontal side-scrolling on mobile */
+  html, body {
+    overflow-x: hidden;
+  }
+
+  /* Responsive smooth touch taps */
+  button, .btn, .card, .icon-btn, .ctrl {
+    touch-action: manipulation;
+  }
+
+  /* Prevent iOS automatic input zoom */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Top Bar */
+  .topbar {
+    padding: 10px 16px;
+    gap: 10px;
+  }
+  .brand-text em {
+    display: none;
+  }
+  .display-username {
+    max-width: 100px;
+  }
+
+  /* Section Spacing */
+  .section {
+    padding: 24px 16px;
+  }
+  .section-head {
+    margin-bottom: 16px;
+    gap: 12px;
+  }
+  .section-head h2 {
+    font-size: 22px;
+  }
+  .section-head .muted {
+    font-size: 13px;
+  }
+
+  /* Results Grid: 2 columns on mobile instead of oversized single cards */
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  .card {
+    padding: 10px;
+    border-radius: 14px;
+  }
+  .card .art {
+    margin-bottom: 8px;
+    border-radius: 10px;
+  }
+  .card .name {
+    font-size: 13px;
+  }
+  .card .sub {
+    font-size: 11px;
+  }
+
+  /* Playlists Grid on mobile */
+  .playlists-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .playlist-card {
+    padding: 10px;
+  }
+  .playlist-card .pl-name {
+    font-size: 14px;
+  }
+
+  /* Moods Grid on mobile */
+  .moods {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .mood {
+    padding: 12px 14px;
+    min-height: 72px;
+  }
+  .mood .ico {
+    font-size: 22px;
+  }
+  .mood .name {
+    font-size: 14px;
+  }
+
+  /* Fixed Bottom Player with Safe Area */
+  .player {
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "left right"
+      "center center";
+    padding: 10px 12px;
+    gap: 8px;
+    border-radius: 20px;
+  }
+  .player-left {
+    grid-area: left;
+    gap: 8px;
+    min-width: 0;
+  }
+  .player-right {
+    grid-area: right;
+    gap: 4px;
+  }
+  .player-center {
+    grid-area: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .player-right .volume {
+    display: none;
+  }
+  .hide-mobile {
+    display: none !important;
+  }
+  .only-mobile {
+    display: grid !important;
+  }
+  .cover {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+  }
+  .meta .title {
+    font-size: 13px;
+  }
+  .meta .artist {
+    font-size: 11px;
+  }
+  .controls {
+    gap: 4px;
+  }
+  .ctrl {
+    width: 36px;
+    height: 36px;
+  }
+  .ctrl.play {
+    width: 40px;
+    height: 40px;
+  }
+  .ctrl.play svg {
+    width: 22px;
+    height: 22px;
+  }
+  .progress-row {
+    gap: 8px;
+    max-width: 100%;
+  }
+  .time {
+    font-size: 10px;
+    min-width: 28px;
+  }
+  .progress {
+    height: 4px;
+  }
+
+  /* Fullscreen Player Mobile Adaptation */
+  .fs-container {
+    padding: max(16px, env(safe-area-inset-top, 16px)) 16px max(20px, env(safe-area-inset-bottom, 20px));
+    height: 100dvh;
+    max-height: 100dvh;
+    justify-content: space-between;
+  }
+  .fs-head {
+    margin-bottom: 8px;
+  }
+  .fs-toggle-btn {
+    padding: 5px 12px;
+    font-size: 11px;
+  }
+  .fs-stage {
+    min-height: 250px;
+    margin-bottom: 8px;
+  }
+  .fs-art {
+    width: min(66vw, 250px);
+    border-radius: 20px;
+  }
+  .fs-lyrics-wrapper {
+    height: clamp(220px, 38vh, 320px);
+  }
+  .fs-lyrics-scroller {
+    padding: 70px 10px 100px;
+    gap: 12px;
+  }
+  .fs-lyric-line {
+    font-size: 17px;
+    padding: 6px 12px;
+    border-radius: 12px;
+  }
+  .fs-lyric-line.active {
+    font-size: 20px;
+  }
+  .fs-meta {
+    margin-bottom: 12px;
+  }
+  .fs-title {
+    font-size: 20px;
+  }
+  .fs-artist {
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .fs-progress-box {
+    margin-bottom: 12px;
+    gap: 8px;
+  }
+  .fs-controls {
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .fs-controls .ctrl {
+    width: 38px;
+    height: 38px;
+  }
+  .fs-play-main {
+    width: 58px !important;
+    height: 58px !important;
+  }
+  .fs-play-main svg {
+    width: 28px !important;
+    height: 28px !important;
+  }
+  .fs-footer-row {
+    padding-top: 10px;
+  }
+  #fsNativeBtn {
+    display: none;
+  }
+  .fs-volume-box {
+    margin: 0 auto;
+  }
+
+  /* Modals on Mobile */
+  .modal-backdrop {
+    padding: 12px;
+  }
+  .modal-card {
+    padding: 24px 18px;
+    border-radius: 20px;
+    max-height: 90vh;
+  }
+  .modal-card.modal-lg {
+    max-height: 90vh;
+  }
+  .pl-detail-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+  }
+  .pl-detail-actions {
+    margin-right: 0;
+    width: 100%;
+  }
+  .pl-track-list {
+    max-height: 50vh;
+    gap: 6px;
+  }
+  .pl-track-item {
+    padding: 6px 10px;
+  }
+  .pl-track-item img {
+    width: 38px;
+    height: 38px;
+  }
+  .pl-track-item .pl-title {
+    font-size: 13px;
+  }
+  .pl-track-item .pl-artist {
+    font-size: 11px;
+  }
+
+  /* Page Footer on Mobile */
+  .page-footer {
+    padding: 24px 16px 140px;
+  }
+  .footer-dev {
+    font-size: 13px;
+    padding: 6px 14px;
+  }
+  .disclaimer-box {
+    padding: 12px 14px;
+    font-size: 10px;
+    line-height: 1.55;
+  }
+
+  /* Auth Gate Card in Playlists */
+  .auth-gate-card {
+    padding: 24px 18px;
+    margin: 16px auto;
+  }
+  .auth-gate-card h3 {
+    font-size: 19px;
+  }
+  .auth-gate-card p {
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+  .auth-gate-card .gate-btns {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Small Smartphone Viewports (<= 480px) */
+@media (max-width: 480px) {
+  .hero {
+    padding: 32px 16px 20px;
+    gap: 28px;
+  }
+  .hero h1 {
+    font-size: clamp(26px, 8vw, 36px);
+    margin-bottom: 12px;
+  }
+  .lede {
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+  .search {
+    padding: 4px 4px 4px 14px;
+  }
+  #searchInput {
+    font-size: 14px;
+    padding: 10px 6px;
+  }
+  .search .btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+  .hero-art {
+    max-width: 220px;
+  }
+  .chips {
+    gap: 6px;
+  }
+  .chips button {
+    padding: 5px 11px;
+    font-size: 12px;
+  }
+
+  /* Compact controls in Fullscreen Player for small mobile */
+  .fs-controls {
+    gap: 8px;
+  }
+  .fs-controls .ctrl {
+    width: 36px;
+    height: 36px;
+  }
+  .fs-play-main {
+    width: 52px !important;
+    height: 52px !important;
+  }
+  .fs-art {
+    width: min(64vw, 220px);
+  }
+  .fs-lyrics-wrapper {
+    height: clamp(180px, 34vh, 260px);
+  }
+}
+
+/* Touch Devices: Keep Card Action Buttons Always Accessible without hover */
+@media (hover: none) {
+  .card .add-btn {
+    opacity: 0.92;
+    transform: scale(1);
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+  }
+  .card .save-btn {
+    opacity: 0.92;
+    transform: scale(1);
+    top: 8px;
+    right: 40px;
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+  }
+  .card:active {
+    transform: scale(0.98);
+  }
+  .btn:active {
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
 
 
