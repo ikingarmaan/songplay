@@ -446,14 +446,70 @@ img { display: block; max-width: 100%; }
 .mood .ico { font-size: 28px; }
 .mood .name { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; }
 
+.dev-badge {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 4px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  letter-spacing: 0.2px;
+}
+.dev-badge strong {
+  color: var(--text);
+}
+
 /* page footer */
 .page-footer {
   max-width: 1320px; margin: 40px auto 0;
-  padding: 24px 40px;
+  padding: 24px 40px 40px;
   text-align: center;
   color: var(--muted); font-size: 13px;
   border-top: 1px solid var(--border);
 }
+.footer-dev {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 8px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.footer-dev strong {
+  background: linear-gradient(135deg, var(--brand), #a06bff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 700;
+}
+.footer-copy {
+  margin: 6px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.disclaimer-box {
+  max-width: 900px;
+  margin: 14px auto 0;
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  text-align: left;
+}
+.disclaimer-box strong {
+  color: var(--text);
+}
+
 
 /* ============================================================
    Player

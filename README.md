@@ -1,8 +1,11 @@
 # SongPlay 🎧
 
+> **Developed by Mohd Armaan**
+
 A single-page music player with a polished glassmorphism + neon theme. Search any song, artist, or mood and stream **full songs for free with unlimited playback**. **No login. No tracking. No nonsense.**
 
 ![Status](https://img.shields.io/badge/status-live-brightgreen) ![Python](https://img.shields.io/badge/Python-3.11+-blue) ![Flask](https://img.shields.io/badge/Flask-3.0-green) ![License](https://img.shields.io/badge/license-MIT-purple)
+
 
 ## ✨ Features
 
@@ -97,6 +100,17 @@ Health check: `/healthz`
 - `GET /api/suggest` — curated mood packs
 - `GET /healthz` — health check
 
+## ⚖️ Legal Disclaimer & Fair Use
+
+SongPlay is an open-source personal project developed by **Mohd Armaan** for **educational, learning, and research purposes only**. 
+
+- **No Media Hosting**: This repository and application do not host, store, cache, upload, or own any audio files or copyrighted music recordings.
+- **Third-Party Indexing**: All streaming links and metadata are dynamically indexed in real time from public third-party endpoints.
+- **Copyright Ownership**: All music, lyrics, artist names, and album artwork belong exclusively to their respective record labels, publishers, and artists.
+- **DMCA / Takedowns**: If you are a copyright holder and wish to request removal of indexation, please open an issue or refer to [DISCLAIMER.md](DISCLAIMER.md) for our rapid compliance process.
+
+See [DISCLAIMER.md](DISCLAIMER.md) for full legal terms.
+
 ## 📝 License
 
-MIT
+Distributed under the [MIT License](LICENSE). Copyright (c) 2026 **Mohd Armaan**.
