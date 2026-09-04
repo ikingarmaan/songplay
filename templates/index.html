@@ -363,6 +363,7 @@
 
   <!-- ───────────── FULLSCREEN PLAYER ───────────── -->
   <div class="fullscreen-player" id="fullscreenPlayer" hidden>
+    <canvas class="fs-canvas" id="fsDynamicCanvas" aria-hidden="true"></canvas>
     <div class="fs-backdrop" id="fsBackdrop" aria-hidden="true"></div>
     <div class="fs-noise" aria-hidden="true"></div>
     
@@ -371,17 +372,38 @@
         <button class="icon-btn" id="closeFullscreenBtn" title="Exit Fullscreen (Esc or F)" aria-label="Exit Fullscreen">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
         </button>
-        <span class="fs-badge">NOW PLAYING</span>
-        <button class="icon-btn" id="fsSaveBtn" title="Save to playlist" aria-label="Save to playlist">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-        </button>
+        <div class="fs-view-toggles" role="tablist">
+          <button class="fs-toggle-btn active" id="fsViewArtBtn" role="tab" aria-selected="true" title="Album Art View">
+            <span>🎵 Cover</span>
+          </button>
+          <button class="fs-toggle-btn" id="fsViewLyricsBtn" role="tab" aria-selected="false" title="Auto-Synced Lyrics">
+            <span>📝 Lyrics</span>
+          </button>
+        </div>
+        <div class="fs-head-actions">
+          <button class="icon-btn" id="fsVisualFxBtn" title="Toggle Visualizer Mode" aria-label="Toggle Visualizer Mode">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.22 19.64 10.56 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/></svg>
+          </button>
+          <button class="icon-btn" id="fsSaveBtn" title="Save to playlist" aria-label="Save to playlist">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          </button>
+        </div>
       </header>
 
       <div class="fs-body">
-        <div class="fs-art-wrapper">
-          <div class="fs-art" id="fsArt">
-            <img id="fsCoverImg" alt="" src="" onerror="this.style.display='none'" />
-            <div class="fs-fallback" id="fsFallback">🎵</div>
+        <div class="fs-stage" id="fsStage">
+          <!-- Album Art View -->
+          <div class="fs-art-wrapper" id="fsArtWrapper">
+            <div class="fs-art" id="fsArt">
+              <img id="fsCoverImg" alt="" src="" onerror="this.style.display='none'" />
+              <div class="fs-fallback" id="fsFallback">🎵</div>
+            </div>
+          </div>
+
+          <!-- Lyrics View -->
+          <div class="fs-lyrics-wrapper" id="fsLyricsWrapper" hidden>
+            <div class="fs-lyrics-status" id="fsLyricsStatus">Loading lyrics...</div>
+            <div class="fs-lyrics-scroller" id="fsLyricsScroller"></div>
           </div>
         </div>
 

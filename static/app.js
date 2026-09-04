@@ -51,12 +51,21 @@ const els = {
 
 const fsEls = {
   container: $('fullscreenPlayer'),
+  canvas: $('fsDynamicCanvas'),
   backdrop: $('fsBackdrop'),
   closeBtn: $('closeFullscreenBtn'),
   saveBtn: $('fsSaveBtn'),
+  viewArtBtn: $('fsViewArtBtn'),
+  viewLyricsBtn: $('fsViewLyricsBtn'),
+  visualFxBtn: $('fsVisualFxBtn'),
+  stage: $('fsStage'),
+  artWrapper: $('fsArtWrapper'),
   art: $('fsArt'),
   coverImg: $('fsCoverImg'),
   fallback: $('fsFallback'),
+  lyricsWrapper: $('fsLyricsWrapper'),
+  lyricsStatus: $('fsLyricsStatus'),
+  lyricsScroller: $('fsLyricsScroller'),
   title: $('fsTitle'),
   artist: $('fsArtist'),
   curTime: $('fsCurTime'),
@@ -89,6 +98,21 @@ const state = {
   inFlight: null,
   user: null,
   playlists: [],
+  lyrics: {
+    trackId: null,
+    loading: false,
+    found: false,
+    synced: false,
+    lines: [],
+    currentLineIdx: -1,
+    activeView: 'art', // 'art' | 'lyrics'
+  },
+  visualFx: {
+    mode: 0, // 0: Aurora Glow Mesh, 1: Flowing Waves, 2: Cosmic Starlight
+    colors: ['#a78bfa', '#ff5fa2', '#3ad6ff'],
+    running: false,
+    animId: null,
+  },
 };
 
 audio.volume = state.lastVolume;
@@ -261,6 +285,8 @@ function playCurrent() {
     updatePlayerUI();
   });
   updatePlayerUI();
+  if (typeof fetchLyricsForTrack === 'function') fetchLyricsForTrack(t);
+  if (typeof extractColorsFromCover === 'function') extractColorsFromCover(t.cover);
 }
 
 function updatePlayerUI() {
@@ -938,7 +964,287 @@ authEls.quickNewPlForm?.addEventListener('submit', async (e) => {
 });
 
 /* =====================================================================
-   Fullscreen Player
+   Fullscreen Player, Dynamic Effects & Synced Lyrics
+   ===================================================================== */
+
+/* Dynamic Color Extraction from Album Cover */
+function extractColorsFromCover(coverUrl) {
+  if (!coverUrl) return;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = 40; cv.height = 40;
+      const ctx = cv.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, 40, 40);
+      const data = ctx.getImageData(0, 0, 40, 40).data;
+      let r1 = 0, g1 = 0, b1 = 0, count1 = 0;
+      let r2 = 0, g2 = 0, b2 = 0, count2 = 0;
+      for (let i = 0; i < data.length; i += 16) {
+        const pr = data[i], pg = data[i + 1], pb = data[i + 2];
+        const lum = 0.299 * pr + 0.587 * pg + 0.114 * pb;
+        if (lum > 35 && lum < 230) {
+          if (i % 32 === 0) { r1 += pr; g1 += pg; b1 += pb; count1++; }
+          else { r2 += pr; g2 += pg; b2 += pb; count2++; }
+        }
+      }
+      if (count1 > 0) {
+        const c1 = `rgb(${Math.round(r1 / count1)}, ${Math.round(g1 / count1)}, ${Math.round(b1 / count1)})`;
+        const c2 = count2 > 0
+          ? `rgb(${Math.round(r2 / count2)}, ${Math.round(g2 / count2)}, ${Math.round(b2 / count2)})`
+          : '#ff5fa2';
+        state.visualFx.colors = [c1, c2, '#a78bfa'];
+      }
+    } catch (err) {
+      // Keep default vivid palette
+    }
+  };
+  img.src = coverUrl;
+}
+
+/* Dynamic Background Canvas Visualizer Engine */
+let canvasCtx = null;
+let canvasWidth = 0;
+let canvasHeight = 0;
+
+function resizeDynamicCanvas() {
+  if (!fsEls.canvas) return;
+  canvasWidth = fsEls.canvas.width = window.innerWidth;
+  canvasHeight = fsEls.canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeDynamicCanvas);
+
+function startDynamicCanvas() {
+  if (!fsEls.canvas) return;
+  resizeDynamicCanvas();
+  canvasCtx = fsEls.canvas.getContext('2d');
+  if (state.visualFx.running) return;
+  state.visualFx.running = true;
+  renderDynamicCanvas();
+}
+
+function stopDynamicCanvas() {
+  state.visualFx.running = false;
+  if (state.visualFx.animId) {
+    cancelAnimationFrame(state.visualFx.animId);
+    state.visualFx.animId = null;
+  }
+}
+
+function renderDynamicCanvas() {
+  if (!state.visualFx.running || !canvasCtx || !fsEls.container || fsEls.container.hidden) {
+    state.visualFx.running = false;
+    return;
+  }
+
+  const ctx = canvasCtx;
+  const w = canvasWidth;
+  const h = canvasHeight;
+  const t = performance.now() * 0.001;
+  const isPlaying = state.isPlaying;
+  const colors = state.visualFx.colors || ['#a78bfa', '#ff5fa2', '#3ad6ff'];
+  const mode = state.visualFx.mode;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Audio-beat expansion factor
+  const pulse = isPlaying ? (1 + 0.08 * Math.sin(t * 3.5)) : 1.0;
+
+  if (mode === 0) {
+    // Mode 0: Aurora Glow Mesh (Smooth fluid breathing orbs)
+    const orbs = [
+      { x: w * 0.3 + Math.sin(t * 0.5) * (w * 0.2), y: h * 0.35 + Math.cos(t * 0.4) * (h * 0.15), r: Math.min(w, h) * 0.48 * pulse, c: colors[0] },
+      { x: w * 0.72 + Math.cos(t * 0.4) * (w * 0.2), y: h * 0.62 + Math.sin(t * 0.6) * (h * 0.18), r: Math.min(w, h) * 0.52 * pulse, c: colors[1] || colors[0] },
+      { x: w * 0.5 + Math.sin(t * 0.3) * (w * 0.25), y: h * 0.78 + Math.cos(t * 0.5) * (h * 0.15), r: Math.min(w, h) * 0.42 * pulse, c: colors[2] || colors[0] },
+    ];
+
+    orbs.forEach(orb => {
+      const grad = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.r);
+      grad.addColorStop(0, orb.c);
+      grad.addColorStop(0.5, orb.c.replace('rgb', 'rgba').replace(')', ', 0.35)'));
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, orb.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+  } else if (mode === 1) {
+    // Mode 1: Flowing Ripple Waves
+    const waveCount = 3;
+    for (let i = 0; i < waveCount; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      const baseH = h * 0.68 + i * 45;
+      const speed = isPlaying ? (t * (1.6 + i * 0.4)) : (t * 0.4);
+      const freq = 0.003 + i * 0.0012;
+      const amp = (32 + i * 18) * (isPlaying ? 1.4 : 0.65);
+
+      for (let x = 0; x <= w; x += 14) {
+        const y = baseH + Math.sin(x * freq + speed) * amp + Math.cos(x * freq * 0.5 + speed * 0.8) * (amp * 0.4);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+
+      const col = colors[i % colors.length];
+      const grad = ctx.createLinearGradient(0, baseH - amp, 0, h);
+      grad.addColorStop(0, col.replace('rgb', 'rgba').replace(')', ', 0.32)'));
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+  } else {
+    // Mode 2: Cosmic Starlight Particle Drift
+    const count = 38;
+    for (let i = 0; i < count; i++) {
+      const px = ((Math.sin(i * 99 + t * 0.2) * 0.5 + 0.5) * w);
+      const py = ((h - (t * (isPlaying ? 45 : 15) * (1 + (i % 3) * 0.4) + i * 50) % h));
+      const size = (3 + (i % 4) * 3) * (isPlaying ? (1 + 0.2 * Math.sin(t * 3 + i)) : 1);
+      const col = colors[i % colors.length];
+
+      ctx.beginPath();
+      ctx.arc(px, py, size, 0, Math.PI * 2);
+      ctx.fillStyle = col;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  state.visualFx.animId = requestAnimationFrame(renderDynamicCanvas);
+}
+
+// Switch Visualizer Mode on Button Tap
+fsEls.visualFxBtn?.addEventListener('click', () => {
+  state.visualFx.mode = (state.visualFx.mode + 1) % 3;
+  const names = ['Aurora Glow Mesh', 'Flowing Wave Ripple', 'Cosmic Starlight'];
+  showToast(`Dynamic Effect: ${names[state.visualFx.mode]}`);
+});
+
+/* =====================================================================
+   Lyrics Controller (Auto-Detect, Auto-Sync & Click-to-Seek)
+   ===================================================================== */
+let currentLyricsAbort = null;
+
+async function fetchLyricsForTrack(track) {
+  if (!track || !track.title) return;
+  if (state.lyrics.trackId === track.id && (state.lyrics.found || !state.lyrics.loading)) return;
+
+  if (currentLyricsAbort) currentLyricsAbort.abort();
+  const ctrl = new AbortController();
+  currentLyricsAbort = ctrl;
+
+  state.lyrics.trackId = track.id;
+  state.lyrics.loading = true;
+  state.lyrics.found = false;
+  state.lyrics.synced = false;
+  state.lyrics.lines = [];
+  state.lyrics.currentLineIdx = -1;
+
+  if (fsEls.lyricsStatus) {
+    fsEls.lyricsStatus.textContent = `Auto-detecting lyrics for "${track.title}"...`;
+    fsEls.lyricsStatus.style.display = 'block';
+  }
+  if (fsEls.lyricsScroller) {
+    fsEls.lyricsScroller.innerHTML = '';
+    fsEls.lyricsScroller.style.display = 'none';
+  }
+
+  try {
+    const dur = track.duration_ms ? Math.round(track.duration_ms / 1000) : 0;
+    const url = `/api/lyrics?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&duration=${dur}`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error('Lyrics fetch failed');
+    const data = await res.json();
+
+    state.lyrics.loading = false;
+    if (data.found) {
+      state.lyrics.found = true;
+      state.lyrics.synced = !!data.synced;
+      state.lyrics.lines = data.lines || [];
+
+      if (data.synced && data.lines && data.lines.length) {
+        if (fsEls.lyricsStatus) fsEls.lyricsStatus.style.display = 'none';
+        if (fsEls.lyricsScroller) {
+          fsEls.lyricsScroller.style.display = 'flex';
+          renderSyncedLyrics(data.lines);
+        }
+      } else if (data.plain) {
+        if (fsEls.lyricsStatus) fsEls.lyricsStatus.style.display = 'none';
+        if (fsEls.lyricsScroller) {
+          fsEls.lyricsScroller.style.display = 'block';
+          fsEls.lyricsScroller.innerHTML = `<div class="fs-plain-lyrics">${esc(data.plain)}</div>`;
+        }
+      } else {
+        if (fsEls.lyricsStatus) {
+          fsEls.lyricsStatus.textContent = 'Lyrics format not supported for this track.';
+          fsEls.lyricsStatus.style.display = 'block';
+        }
+      }
+    } else {
+      if (fsEls.lyricsStatus) {
+        fsEls.lyricsStatus.textContent = 'No lyrics found for this song.';
+        fsEls.lyricsStatus.style.display = 'block';
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    state.lyrics.loading = false;
+    if (fsEls.lyricsStatus) {
+      fsEls.lyricsStatus.textContent = 'Could not load lyrics for this track.';
+      fsEls.lyricsStatus.style.display = 'block';
+    }
+  }
+}
+
+function renderSyncedLyrics(lines) {
+  if (!fsEls.lyricsScroller) return;
+  fsEls.lyricsScroller.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  lines.forEach((line) => {
+    const div = document.createElement('div');
+    div.className = 'fs-lyric-line';
+    div.textContent = line.text || '♪';
+    div.dataset.time = line.time;
+    div.addEventListener('click', () => {
+      audio.currentTime = line.time;
+      if (audio.paused) audio.play();
+    });
+    frag.appendChild(div);
+  });
+
+  fsEls.lyricsScroller.appendChild(frag);
+}
+
+function setFsView(view) {
+  state.lyrics.activeView = view;
+  const isArt = view === 'art';
+  fsEls.viewArtBtn?.classList.toggle('active', isArt);
+  fsEls.viewArtBtn?.setAttribute('aria-selected', String(isArt));
+  fsEls.viewLyricsBtn?.classList.toggle('active', !isArt);
+  fsEls.viewLyricsBtn?.setAttribute('aria-selected', String(!isArt));
+  if (fsEls.artWrapper) fsEls.artWrapper.hidden = !isArt;
+  if (fsEls.lyricsWrapper) fsEls.lyricsWrapper.hidden = isArt;
+
+  if (!isArt && state.lyrics.currentLineIdx >= 0) {
+    const activeEl = fsEls.lyricsScroller?.querySelector('.fs-lyric-line.active');
+    if (activeEl) {
+      setTimeout(() => activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+    }
+  }
+}
+
+fsEls.viewArtBtn?.addEventListener('click', () => setFsView('art'));
+fsEls.viewLyricsBtn?.addEventListener('click', () => setFsView('lyrics'));
+
+/* =====================================================================
+   Fullscreen View Orchestration
    ===================================================================== */
 function openFullscreenPlayer() {
   const t = state.queue[state.currentIdx];
@@ -949,10 +1255,12 @@ function openFullscreenPlayer() {
   fsEls.container.hidden = false;
   updateFullscreenUI();
   updateFullscreenTime();
+  startDynamicCanvas();
 }
 
 function closeFullscreenPlayer() {
   fsEls.container.hidden = true;
+  stopDynamicCanvas();
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }
@@ -969,11 +1277,13 @@ function updateFullscreenUI() {
       fsEls.coverImg.style.display = 'block';
       fsEls.fallback.style.display = 'none';
       fsEls.backdrop.style.backgroundImage = `url("${t.cover}")`;
+      extractColorsFromCover(t.cover);
     } else {
       fsEls.coverImg.style.display = 'none';
       fsEls.fallback.style.display = 'block';
       fsEls.backdrop.style.backgroundImage = 'none';
     }
+    fetchLyricsForTrack(t);
   } else {
     fsEls.title.textContent = 'Nothing playing';
     fsEls.artist.textContent = 'Search a song to begin';
@@ -990,6 +1300,9 @@ function updateFullscreenUI() {
   fsEls.shuffleBtn?.classList.toggle('active', state.shuffle);
   fsEls.loopBtn?.classList.toggle('active', state.loop);
   setFsVolUI(audio.volume);
+  if (!state.visualFx.running) {
+    startDynamicCanvas();
+  }
 }
 
 function updateFullscreenTime() {
@@ -1000,6 +1313,31 @@ function updateFullscreenTime() {
   fsEls.progress.setAttribute('aria-valuenow', String(Math.round(pct)));
   fsEls.curTime.textContent = fmt(audio.currentTime);
   fsEls.durTime.textContent = fmt(audio.duration);
+
+  // Synchronized Lyrics Scroller & Line Highlighting
+  if (state.lyrics.synced && state.lyrics.lines.length && fsEls.lyricsScroller) {
+    const cur = audio.currentTime;
+    let activeIdx = -1;
+    const lines = state.lyrics.lines;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].time <= cur + 0.2) {
+        activeIdx = i;
+      } else {
+        break;
+      }
+    }
+    if (activeIdx !== state.lyrics.currentLineIdx) {
+      state.lyrics.currentLineIdx = activeIdx;
+      const lineEls = fsEls.lyricsScroller.querySelectorAll('.fs-lyric-line');
+      lineEls.forEach((el, i) => {
+        const isActive = i === activeIdx;
+        el.classList.toggle('active', isActive);
+        if (isActive && state.lyrics.activeView === 'lyrics') {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    }
+  }
 }
 
 /* Fullscreen seek */

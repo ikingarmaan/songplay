@@ -11,6 +11,7 @@ import html
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 import warnings
@@ -344,6 +345,156 @@ def api_suggest() -> Response:
         {"id": "sleep",    "name": "Sleep Sounds",     "q": "sleep calm ambient",       "icon": "🌙", "color": "linear-gradient(135deg,#1a1a2e,#3ad6ff)"},
     ]
     return jsonify({"packs": packs})
+
+
+# ---------------------------------------------------------------------------
+# Lyrics Service & Endpoint
+# ---------------------------------------------------------------------------
+LRC_REGEX = re.compile(r"\[(\d{1,2}):(\d{1,2}(?:\.\d{1,3})?)\](.*)")
+
+
+def _clean_song_title(title: str) -> str:
+    """Strip noise from song titles (movie tags, feat info, remix tags)."""
+    clean = re.sub(
+        r"[\(\[][^\)\]]*(?:from|feat|ft|official|lyric|video|version|remix)[^\)\]]*[\)\]]",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    clean = re.sub(r"\s*-\s*$", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean or title
+
+
+def _clean_artist_name(artist: str) -> str:
+    """Get primary artist name for cleaner queries."""
+    first = re.split(r"[,/&]|(?:\sfeat\.?\s)", artist, flags=re.IGNORECASE)[0]
+    return first.strip() or artist
+
+
+def _parse_lrc(lrc_text: str) -> list[dict[str, Any]]:
+    """Convert LRC timestamped lines to [{ time: float, text: str }]."""
+    lines: list[dict[str, Any]] = []
+    for row in lrc_text.splitlines():
+        m = LRC_REGEX.match(row.strip())
+        if m:
+            mins = int(m.group(1))
+            secs = float(m.group(2))
+            text = m.group(3).strip()
+            lines.append({"time": round(mins * 60 + secs, 2), "text": text})
+    return lines
+
+
+@app.get("/api/lyrics")
+def api_lyrics() -> Response:
+    """Fetch time-synced or plain lyrics for the given song."""
+    title = (request.args.get("title") or "").strip()
+    artist = (request.args.get("artist") or "").strip()
+    dur_str = request.args.get("duration") or "0"
+    try:
+        duration = int(float(dur_str))
+    except (ValueError, TypeError):
+        duration = 0
+
+    if not title:
+        return jsonify({"found": False, "synced": False, "lines": [], "plain": "No title specified"}), 400
+
+    clean_title = _clean_song_title(title)
+    clean_artist = _clean_artist_name(artist)
+
+    cache_key = f"lyrics:{clean_title.lower()}:{clean_artist.lower()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    result: dict[str, Any] = {"found": False, "synced": False, "lines": [], "plain": ""}
+
+    # 1. Try LRCLIB exact match (/api/get)
+    try:
+        params: dict[str, Any] = {
+            "track_name": clean_title,
+            "artist_name": clean_artist,
+        }
+        if duration > 0:
+            params["duration"] = duration
+
+        r = requests.get(
+            "https://lrclib.net/api/get",
+            params=params,
+            headers={"User-Agent": "SongPlay/1.0"},
+            timeout=4,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            synced = data.get("syncedLyrics")
+            plain = data.get("plainLyrics") or ""
+            if synced:
+                lines = _parse_lrc(synced)
+                if lines:
+                    result = {
+                        "found": True,
+                        "synced": True,
+                        "lines": lines,
+                        "plain": plain,
+                        "track_name": data.get("trackName"),
+                        "artist_name": data.get("artistName"),
+                    }
+            elif plain:
+                result = {
+                    "found": True,
+                    "synced": False,
+                    "lines": [],
+                    "plain": plain,
+                    "track_name": data.get("trackName"),
+                    "artist_name": data.get("artistName"),
+                }
+    except Exception as exc:
+        log.warning("LRCLIB /api/get error: %s", exc)
+
+    # 2. Fallback: Try LRCLIB search (/api/search)
+    if not result.get("found"):
+        try:
+            query = f"{clean_title} {clean_artist}".strip()
+            r = requests.get(
+                "https://lrclib.net/api/search",
+                params={"q": query},
+                headers={"User-Agent": "SongPlay/1.0"},
+                timeout=4,
+            )
+            if r.status_code == 200:
+                items = r.json()
+                if isinstance(items, list) and items:
+                    best = next((it for it in items if it.get("syncedLyrics")), None)
+                    if not best:
+                        best = next((it for it in items if it.get("plainLyrics")), items[0])
+
+                    synced = best.get("syncedLyrics")
+                    plain = best.get("plainLyrics") or ""
+                    if synced:
+                        lines = _parse_lrc(synced)
+                        if lines:
+                            result = {
+                                "found": True,
+                                "synced": True,
+                                "lines": lines,
+                                "plain": plain,
+                                "track_name": best.get("trackName"),
+                                "artist_name": best.get("artistName"),
+                            }
+                    elif plain:
+                        result = {
+                            "found": True,
+                            "synced": False,
+                            "lines": [],
+                            "plain": plain,
+                            "track_name": best.get("trackName"),
+                            "artist_name": best.get("artistName"),
+                        }
+        except Exception as exc:
+            log.warning("LRCLIB /api/search error: %s", exc)
+
+    cache.set(cache_key, result, timeout=86400)
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------
