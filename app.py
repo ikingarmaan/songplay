@@ -14,9 +14,11 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
 import warnings
 from datetime import timedelta
+from functools import wraps
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -47,6 +49,28 @@ def get_db_path() -> str:
 
 DB_PATH = get_db_path()
 
+def get_secret_key() -> str:
+    """Resolve cryptographically secure secret key, persisting locally if not set via env."""
+    env_key = os.environ.get("SECRET_KEY")
+    if env_key and env_key != "songplay-session-key-dev-2026":
+        return env_key
+    key_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".secret_key")
+    if os.path.exists(key_file):
+        try:
+            with open(key_file, "r") as f:
+                saved = f.read().strip()
+                if len(saved) >= 32:
+                    return saved
+        except Exception:
+            pass
+    new_key = secrets.token_hex(32)
+    try:
+        with open(key_file, "w") as f:
+            f.write(new_key)
+    except Exception:
+        pass
+    return new_key
+
 SAAVN_ENDPOINT = "https://www.jiosaavn.com/api.php"
 SAAVN_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -61,9 +85,14 @@ CACHE_TTL = 60 * 30  # 30 minutes
 DEFAULT_LIMIT = 24
 MAX_LIMIT = 50
 
+# Input validation boundaries
+USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{2,30}$")
+TRACK_ID_RE = re.compile(r"^[a-zA-Z0-9_\-\.]{1,100}$")
+
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.secret_key = os.environ.get("SECRET_KEY", "songplay-session-key-dev-2026")
+app.secret_key = get_secret_key()
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=365)
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2MB max payload limit
 app.config["CACHE_TYPE"] = "SimpleCache"
 app.config["CACHE_DEFAULT_TIMEOUT"] = CACHE_TTL
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -72,6 +101,115 @@ cache = Cache(app)
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(message)s")
 log = logging.getLogger("songplay")
+
+
+# ---------------------------------------------------------------------------
+# Security: Sliding-Window Rate Limiter & Client IP
+# ---------------------------------------------------------------------------
+class RateLimiter:
+    """Thread-safe sliding-window in-memory rate limiter."""
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._history: dict[str, list[float]] = {}
+
+    def is_allowed(self, key: str, max_requests: int, window_seconds: float) -> tuple[bool, int]:
+        now = time.time()
+        with self._lock:
+            timestamps = self._history.get(key, [])
+            valid_from = now - window_seconds
+            timestamps = [t for t in timestamps if t > valid_from]
+
+            if len(timestamps) >= max_requests:
+                earliest = timestamps[0]
+                retry_after = max(1, int(earliest + window_seconds - now))
+                self._history[key] = timestamps
+                return False, retry_after
+
+            timestamps.append(now)
+            self._history[key] = timestamps
+
+            if len(self._history) > 5000:
+                self._cleanup(now)
+
+            return True, 0
+
+    def record_attempt(self, key: str):
+        now = time.time()
+        with self._lock:
+            timestamps = self._history.get(key, [])
+            timestamps.append(now)
+            self._history[key] = timestamps
+
+    def is_blocked(self, key: str, max_requests: int, window_seconds: float) -> tuple[bool, int]:
+        """Check if currently blocked without adding an attempt."""
+        now = time.time()
+        with self._lock:
+            timestamps = self._history.get(key, [])
+            valid_from = now - window_seconds
+            timestamps = [t for t in timestamps if t > valid_from]
+            self._history[key] = timestamps
+
+            if len(timestamps) >= max_requests:
+                earliest = timestamps[0]
+                retry_after = max(1, int(earliest + window_seconds - now))
+                return True, retry_after
+
+            return False, 0
+
+    def reset(self, key: str):
+        """Reset attempt history for a specific key."""
+        with self._lock:
+            self._history.pop(key, None)
+
+    def _cleanup(self, now: float):
+        cutoff = now - 3600
+        stale = [k for k, v in self._history.items() if not v or v[-1] < cutoff]
+        for k in stale:
+            self._history.pop(k, None)
+
+rate_limiter = RateLimiter()
+
+
+def get_client_ip() -> str:
+    """Extract real client IP taking standard proxy headers into account."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "127.0.0.1"
+
+
+# ---------------------------------------------------------------------------
+# Security: Response Headers Middleware
+# ---------------------------------------------------------------------------
+@app.after_request
+def apply_security_headers(response: Response) -> Response:
+    """Enforce industry-standard HTTP security headers."""
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: blob: https: *; "
+        "media-src 'self' data: blob: https: *; "
+        "connect-src 'self' https://*.jiosaavn.com https://itunes.apple.com https://lrclib.net; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
+    response.headers["Content-Security-Policy"] = csp
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = (
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+        "magnetometer=(), microphone=(), payment=(), usb=()"
+    )
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+
+    if request.is_secure or request.headers.get("X-Forwarded-Proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    return response
 
 
 def get_db():
@@ -327,11 +465,19 @@ def healthz() -> Response:
 
 @app.get("/api/search")
 def api_search() -> Response:
+    ip = get_client_ip()
+    allowed, retry_after = rate_limiter.is_allowed(f"search:{ip}", max_requests=60, window_seconds=60)
+    if not allowed:
+        resp = jsonify({"error": "Search rate limit exceeded. Please wait a moment."})
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
+
     term = (request.args.get("q") or "").strip()
+    term = re.sub(r"[\x00-\x1f\x7f]", "", term)
     if not term:
         return jsonify({"error": "missing query parameter 'q'"}), 400
     if len(term) > 120:
-        return jsonify({"error": "query too long"}), 400
+        return jsonify({"error": "query too long (maximum 120 characters)"}), 400
 
     try:
         limit = int(request.args.get("limit", DEFAULT_LIMIT))
@@ -415,8 +561,17 @@ def _parse_lrc(lrc_text: str) -> list[dict[str, Any]]:
 @app.get("/api/lyrics")
 def api_lyrics() -> Response:
     """Fetch time-synced or plain lyrics for the given song."""
-    title = (request.args.get("title") or "").strip()
-    artist = (request.args.get("artist") or "").strip()
+    ip = get_client_ip()
+    allowed, retry_after = rate_limiter.is_allowed(f"lyrics:{ip}", max_requests=60, window_seconds=60)
+    if not allowed:
+        resp = jsonify({"found": False, "synced": False, "lines": [], "plain": "Rate limit exceeded. Please wait a moment."})
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
+
+    title = (request.args.get("title") or "").strip()[:120]
+    artist = (request.args.get("artist") or "").strip()[:120]
+    title = re.sub(r"[\x00-\x1f\x7f]", "", title)
+    artist = re.sub(r"[\x00-\x1f\x7f]", "", artist)
     dur_str = request.args.get("duration") or "0"
     try:
         duration = int(float(dur_str))
@@ -543,16 +698,23 @@ def get_current_user() -> dict[str, Any] | None:
 
 @app.post("/api/auth/register")
 def api_register() -> Response:
+    ip = get_client_ip()
+    allowed, retry_after = rate_limiter.is_allowed(f"register:{ip}", max_requests=10, window_seconds=3600)
+    if not allowed:
+        resp = jsonify({"error": "Registration rate limit exceeded. Please try again later."})
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
+
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
 
-    if not username or len(username) < 2:
-        return jsonify({"error": "Username must be at least 2 characters"}), 400
-    if len(username) > 30:
-        return jsonify({"error": "Username must be under 30 characters"}), 400
+    if not username or not USERNAME_RE.match(username):
+        return jsonify({"error": "Username must be 2-30 characters (letters, numbers, hyphens, dots, underscores only)"}), 400
     if not password or len(password) < 4:
         return jsonify({"error": "Password must be at least 4 characters"}), 400
+    if len(password) > 128:
+        return jsonify({"error": "Password cannot exceed 128 characters"}), 400
 
     password_hash = generate_password_hash(password)
     user_token = secrets.token_hex(24)
@@ -578,6 +740,13 @@ def api_register() -> Response:
 
 @app.post("/api/auth/login")
 def api_login() -> Response:
+    ip = get_client_ip()
+    blocked, retry_after = rate_limiter.is_blocked(f"login_fail:{ip}", max_requests=5, window_seconds=300)
+    if blocked:
+        resp = jsonify({"error": f"Too many failed login attempts. Please wait {retry_after} seconds before trying again."})
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
+
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
@@ -585,6 +754,8 @@ def api_login() -> Response:
 
     if not username or not password:
         return jsonify({"error": "Please enter both username and password"}), 400
+    if len(password) > 128:
+        return jsonify({"error": "Invalid username or password"}), 400
 
     with get_db() as conn:
         user = conn.execute(
@@ -623,6 +794,7 @@ def api_login() -> Response:
                     conn.execute("INSERT INTO playlists (user_id, name) VALUES (?, ?)", (user_id, "Favorites"))
                 conn.commit()
 
+                rate_limiter.reset(f"login_fail:{ip}")
                 session.permanent = True
                 session["user_id"] = user_id
                 session["username"] = username
@@ -634,9 +806,11 @@ def api_login() -> Response:
                     "user": {"id": user_id, "username": username, "user_token": user_token}
                 })
 
+            rate_limiter.record_attempt(f"login_fail:{ip}")
             return jsonify({"error": "Invalid username or password"}), 401
 
         if not check_password_hash(user["password_hash"], password):
+            rate_limiter.record_attempt(f"login_fail:{ip}")
             return jsonify({"error": "Invalid username or password"}), 401
 
         user_token = user["user_token"]
@@ -647,6 +821,7 @@ def api_login() -> Response:
             conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", (user["id"],))
         conn.commit()
 
+        rate_limiter.reset(f"login_fail:{ip}")
         session.permanent = True
         session["user_id"] = user["id"]
         session["username"] = user["username"]
@@ -662,14 +837,23 @@ def api_auth_sync() -> Response:
     """Seamless session & account auto-sync.
     Survives container rebuilds / cloud redeploys by recovering users and playlists from client storage.
     """
+    ip = get_client_ip()
+    allowed, retry_after = rate_limiter.is_allowed(f"sync:{ip}", max_requests=30, window_seconds=60)
+    if not allowed:
+        resp = jsonify({"authenticated": False, "error": "Too many sync requests. Please wait."})
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
+
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get("username") or "").strip()
     password_cred = (data.get("password_cred") or "").strip()
     user_token = (data.get("user_token") or "").strip()
     backup_playlists = data.get("playlists") or []
 
-    if not username:
-        return jsonify({"authenticated": False, "error": "Missing username"}), 400
+    if not username or not USERNAME_RE.match(username):
+        return jsonify({"authenticated": False, "error": "Invalid username format"}), 400
+    if password_cred and len(password_cred) > 128:
+        return jsonify({"authenticated": False, "error": "Invalid password length"}), 400
 
     with get_db() as conn:
         user = conn.execute(
@@ -818,7 +1002,8 @@ def api_create_playlist() -> Response:
     if not user:
         return jsonify({"error": "Sign in to create a playlist"}), 401
     data = request.get_json(force=True, silent=True) or {}
-    name = (data.get("name") or "").strip()
+    name = (data.get("name") or "").strip()[:60]
+    name = re.sub(r"[\x00-\x1f\x7f]", "", name)
     if not name:
         return jsonify({"error": "Playlist name is required"}), 400
     if len(name) > 60:
@@ -869,16 +1054,28 @@ def api_add_track_to_playlist(playlist_id: int) -> Response:
     if not user:
         return jsonify({"error": "Sign in to save songs to playlists"}), 401
     data = request.get_json(force=True, silent=True) or {}
-    track_id = str(data.get("id") or "")
-    title = (data.get("title") or "Unknown").strip()
-    artist = (data.get("artist") or "Unknown").strip()
-    album = (data.get("album") or "").strip()
-    cover = (data.get("cover") or "").strip()
-    preview = (data.get("preview") or "").strip()
-    duration_ms = int(data.get("duration_ms") or 180000)
+    track_id = str(data.get("id") or data.get("track_id") or "").strip()[:100]
+    track_id = re.sub(r"[\x00-\x1f\x7f]", "", track_id)
+    if not track_id:
+        track_id = secrets.token_hex(8)
 
-    if not preview:
-        return jsonify({"error": "Missing audio stream URL"}), 400
+    title = (data.get("title") or "Unknown").strip()[:120]
+    artist = (data.get("artist") or "Unknown").strip()[:120]
+    album = (data.get("album") or "").strip()[:120]
+    cover = (data.get("cover") or "").strip()[:500]
+    preview = (data.get("preview") or data.get("stream_url") or "").strip()[:1000]
+
+    title = re.sub(r"[\x00-\x1f\x7f]", "", title)
+    artist = re.sub(r"[\x00-\x1f\x7f]", "", artist)
+    album = re.sub(r"[\x00-\x1f\x7f]", "", album)
+
+    try:
+        duration_ms = int(data.get("duration_ms") or 180000)
+    except (ValueError, TypeError):
+        duration_ms = 180000
+
+    if not preview or not preview.startswith(("http://", "https://")):
+        return jsonify({"error": "Invalid or missing audio stream URL"}), 400
 
     with get_db() as conn:
         p = conn.execute("SELECT id FROM playlists WHERE id = ? AND user_id = ?", (playlist_id, user["id"])).fetchone()
@@ -917,17 +1114,45 @@ def api_remove_track_from_playlist(playlist_id: int, item_id: int) -> Response:
 # ---------------------------------------------------------------------------
 # Error handlers
 # ---------------------------------------------------------------------------
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({"error": "Bad request", "details": str(getattr(e, "description", "Invalid request"))}), 400
+
+
+@app.errorhandler(401)
+def unauthorized(_e):
+    return jsonify({"error": "Authentication required"}), 401
+
+
+@app.errorhandler(403)
+def forbidden(_e):
+    return jsonify({"error": "Access forbidden"}), 403
+
+
 @app.errorhandler(404)
 def not_found(_e):
     if request.path.startswith("/api/"):
-        return jsonify({"error": "not found"}), 404
+        return jsonify({"error": "Not found"}), 404
     return render_template("index.html"), 200  # SPA fallback
+
+
+@app.errorhandler(413)
+def payload_too_large(_e):
+    return jsonify({"error": "Payload too large. Maximum allowed size is 2MB"}), 413
+
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    retry_after = getattr(e, "retry_after", 60)
+    resp = jsonify({"error": "Too many requests. Please slow down and try again later.", "retry_after": retry_after})
+    resp.headers["Retry-After"] = str(retry_after)
+    return resp, 429
 
 
 @app.errorhandler(500)
 def server_error(e):
-    log.exception("server error: %s", e)
-    return jsonify({"error": "internal server error"}), 500
+    log.exception("Internal server error: %s", e)
+    return jsonify({"error": "An internal server error occurred"}), 500
 
 
 if __name__ == "__main__":

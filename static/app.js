@@ -212,7 +212,10 @@ function renderResults(tracks) {
       <div class="name">${esc(t.title)}</div>
       <div class="sub">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}${t.duration_ms ? ' · ' + fmt(t.duration_ms / 1000) : ''}</div>
     `;
-    card.querySelector('.art').addEventListener('click', () => playFromResults(i));
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.save-btn') || e.target.closest('.add-btn')) return;
+      playFromResults(i);
+    });
     card.querySelector('.save-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       openAddToPlaylistModal(t);
@@ -525,7 +528,14 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'ArrowLeft') prevTrack();
   else if (e.key === 'm' || e.key === 'M') els.muteBtn.click();
   else if (e.key === 'q' || e.key === 'Q') els.queueBtn.click();
-  else if (e.key === 'Escape') closeQueue();
+  else if (e.key === 'Escape') {
+    if (fsEls.container && !fsEls.container.hidden) closeFullscreenPlayer();
+    else if (authEls.modal && !authEls.modal.hidden) closeAuth();
+    else if (authEls.newPlModal && !authEls.newPlModal.hidden) authEls.newPlModal.hidden = true;
+    else if (authEls.detailModal && !authEls.detailModal.hidden) authEls.detailModal.hidden = true;
+    else if (authEls.addModal && !authEls.addModal.hidden) authEls.addModal.hidden = true;
+    else closeQueue();
+  }
 });
 
 /* =====================================================================
@@ -884,6 +894,8 @@ authEls.newPlForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = authEls.newPlName.value.trim();
   if (!name) return;
+  const submitBtn = authEls.newPlForm.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
   try {
     const res = await fetch('/api/playlists', {
       method: 'POST',
@@ -897,6 +909,8 @@ authEls.newPlForm?.addEventListener('submit', async (e) => {
     loadPlaylists();
   } catch (err) {
     showToast(err.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
@@ -980,7 +994,7 @@ async function openPlaylistDetails(playlistId) {
       authEls.detailTracks.appendChild(row);
     });
   } catch (err) {
-    authEls.detailTracks.innerHTML = `<div style="padding:20px;text-align:center;color:#ff7e9e">${err.message}</div>`;
+    authEls.detailTracks.innerHTML = `<div style="padding:20px;text-align:center;color:#ff7e9e">${esc(err.message)}</div>`;
   }
 }
 
@@ -1042,6 +1056,8 @@ authEls.quickNewPlForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = authEls.quickNewPlInput.value.trim();
   if (!name || !targetTrackForPlaylist) return;
+  const submitBtn = authEls.quickNewPlForm.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
   try {
     const res = await fetch('/api/playlists', {
       method: 'POST',
@@ -1066,6 +1082,8 @@ authEls.quickNewPlForm?.addEventListener('submit', async (e) => {
     loadPlaylists();
   } catch (err) {
     showToast(err.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
