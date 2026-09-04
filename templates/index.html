@@ -193,7 +193,7 @@
     <div class="player-bg" id="playerBg" aria-hidden="true"></div>
 
     <div class="player-left">
-      <div class="cover" id="cover" aria-hidden="true">
+      <div class="cover" id="cover" aria-hidden="true" title="Open Fullscreen View" style="cursor:pointer;">
         <div class="cover-fallback">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg>
         </div>
@@ -202,6 +202,9 @@
         <div class="title" id="nowTitle">Nothing playing</div>
         <div class="artist" id="nowArtist">Search a song to begin</div>
       </div>
+      <button class="icon-btn" id="playerSaveBtn" title="Save to playlist" aria-label="Save to playlist">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+      </button>
       <button class="icon-btn only-mobile" id="mobileQueue" aria-label="Open queue">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 6h13v2H3zm0 5h13v2H3zm0 5h9v2H3zm16-7v6h2v6h2v-6h2v-2h-2v-2h-2v-2z"/></svg>
       </button>
@@ -245,6 +248,9 @@
       </div>
       <button class="ctrl hide-mobile" id="queueBtn" title="Queue" aria-label="Open queue">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 6h13v2H3zm0 5h13v2H3zm0 5h9v2H3zm16-7v6h2v6h2v-6h2v-2h-2v-2h-2v-2z"/></svg>
+      </button>
+      <button class="ctrl" id="fullscreenBtn" title="Fullscreen Player (F)" aria-label="Open fullscreen player">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
       </button>
     </div>
   </div>
@@ -343,11 +349,88 @@
   <div class="modal-backdrop" id="addToPlaylistModal" hidden>
     <div class="modal-card modal-sm" role="dialog" aria-modal="true">
       <button class="modal-close" id="closeAddToPlaylistModal" aria-label="Close">&times;</button>
-      <h3>Add to Playlist</h3>
-      <p class="muted" id="addTrackTitleArtist">Select a playlist</p>
+      <h3>Save to Playlist</h3>
+      <p class="muted" id="addTrackTitleArtist">Select a playlist for this song</p>
       <div class="add-pl-list" id="addToPlaylistOptions"></div>
-      <div class="add-pl-footer">
-        <button class="btn btn-outline btn-block btn-sm" id="quickCreatePlaylistBtn">+ Create New Playlist</button>
+      <div class="quick-add-wrap">
+        <form id="quickNewPlaylistForm" class="quick-add-form">
+          <input type="text" id="quickNewPlaylistInput" placeholder="New playlist name..." maxlength="60" required />
+          <button type="submit" class="btn btn-sm btn-primary">Create & Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────────── FULLSCREEN PLAYER ───────────── -->
+  <div class="fullscreen-player" id="fullscreenPlayer" hidden>
+    <div class="fs-backdrop" id="fsBackdrop" aria-hidden="true"></div>
+    <div class="fs-noise" aria-hidden="true"></div>
+    
+    <div class="fs-container">
+      <header class="fs-head">
+        <button class="icon-btn" id="closeFullscreenBtn" title="Exit Fullscreen (Esc or F)" aria-label="Exit Fullscreen">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+        </button>
+        <span class="fs-badge">NOW PLAYING</span>
+        <button class="icon-btn" id="fsSaveBtn" title="Save to playlist" aria-label="Save to playlist">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </button>
+      </header>
+
+      <div class="fs-body">
+        <div class="fs-art-wrapper">
+          <div class="fs-art" id="fsArt">
+            <img id="fsCoverImg" alt="" src="" onerror="this.style.display='none'" />
+            <div class="fs-fallback" id="fsFallback">🎵</div>
+          </div>
+        </div>
+
+        <div class="fs-meta">
+          <h2 class="fs-title" id="fsTitle">Nothing playing</h2>
+          <p class="fs-artist" id="fsArtist">Search a song to begin</p>
+        </div>
+
+        <div class="fs-progress-box">
+          <span class="time" id="fsCurTime">0:00</span>
+          <div class="progress fs-progress" id="fsProgress" role="slider" aria-label="Seek" tabindex="0">
+            <div class="progress-fill" id="fsProgressFill"></div>
+            <div class="progress-thumb" id="fsProgressThumb"></div>
+          </div>
+          <span class="time" id="fsDurTime">0:00</span>
+        </div>
+
+        <div class="fs-controls">
+          <button class="ctrl" id="fsShuffleBtn" title="Shuffle" aria-label="Shuffle">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M17 3h4v4h-2V5h-2V3zM3 3h2l8 8 8-8 2 2-8 8 8 8-2 2-8-8-8 8H3l9-9-9-9zm14 16h2v2h-4v-2h2v-2h2v2h-2v-2h-2v2h2z"/></svg>
+          </button>
+          <button class="ctrl" id="fsPrevBtn" title="Previous track" aria-label="Previous">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12l8.5 6V6z"/></svg>
+          </button>
+          <button class="ctrl play fs-play-main" id="fsPlayBtn" title="Play / Pause" aria-label="Play or pause">
+            <svg id="fsPlayIcon" viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button class="ctrl" id="fsNextBtn" title="Next track" aria-label="Next">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+          </button>
+          <button class="ctrl" id="fsLoopBtn" title="Toggle loop" aria-label="Loop">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+          </button>
+        </div>
+
+        <div class="fs-footer-row">
+          <div class="fs-volume-box">
+            <button class="ctrl" id="fsMuteBtn" title="Mute" aria-label="Mute">
+              <svg id="fsVolIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12z"/></svg>
+            </button>
+            <div class="volume fs-volume" id="fsVolume" role="slider" aria-label="Volume" tabindex="0">
+              <div class="vol-fill" id="fsVolFill"></div>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline" id="fsNativeBtn" title="True Fullscreen (OS)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+            <span>OS Fullscreen</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
