@@ -57,6 +57,8 @@ const state = {
   lastVolume: 0.7,
   currentQuery: '',
   inFlight: null,
+  user: null,
+  playlists: [],
 };
 
 audio.volume = state.lastVolume;
@@ -151,11 +153,16 @@ function renderResults(tracks) {
           <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </div></div>
       </div>
+      <button class="save-btn" aria-label="Save to playlist" title="Save to playlist">❤️</button>
       <button class="add-btn" aria-label="Add to queue" title="Add to queue">+</button>
       <div class="name">${esc(t.title)}</div>
       <div class="sub">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}${t.duration_ms ? ' · ' + fmt(t.duration_ms / 1000) : ''}</div>
     `;
     card.querySelector('.art').addEventListener('click', () => playFromResults(i));
+    card.querySelector('.save-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAddToPlaylistModal(t);
+    });
     card.querySelector('.add-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       addToQueue(t);
@@ -480,8 +487,394 @@ function showToast(msg) {
 }
 
 /* =====================================================================
+   Auth & Playlists
+   ===================================================================== */
+let authMode = 'login';
+let targetTrackForPlaylist = null;
+let currentViewingPlaylistId = null;
+
+const authEls = {
+  openBtn: $('openAuthBtn'),
+  userProfile: $('userProfile'),
+  authActions: $('authActions'),
+  displayUsername: $('displayUsername'),
+  logoutBtn: $('logoutBtn'),
+  modal: $('authModal'),
+  closeBtn: $('closeAuthModal'),
+  tabSignIn: $('tabSignIn'),
+  tabSignUp: $('tabSignUp'),
+  form: $('authForm'),
+  title: $('authModalTitle'),
+  sub: $('authModalSubtitle'),
+  username: $('authUsername'),
+  password: $('authPassword'),
+  submitBtn: $('authSubmitBtn'),
+  errorMsg: $('authErrorMsg'),
+  gateCard: $('playlistsAuthGate'),
+  gateSignIn: $('gateSignInBtn'),
+  gateSignUp: $('gateSignUpBtn'),
+  grid: $('playlistsGrid'),
+  sectionActions: $('playlistSectionActions'),
+  openNewPlBtn: $('openCreatePlaylistBtn'),
+  newPlModal: $('newPlaylistModal'),
+  closeNewPlBtn: $('closeNewPlaylistModal'),
+  cancelNewPlBtn: $('cancelNewPlaylistBtn'),
+  newPlForm: $('newPlaylistForm'),
+  newPlName: $('newPlaylistName'),
+  detailModal: $('playlistDetailModal'),
+  closeDetailModal: $('closePlaylistDetailModal'),
+  detailName: $('detailPlaylistName'),
+  detailMeta: $('detailPlaylistMeta'),
+  detailTracks: $('detailTrackList'),
+  playAllBtn: $('playAllPlaylistBtn'),
+  deletePlBtn: $('deletePlaylistBtn'),
+  addModal: $('addToPlaylistModal'),
+  closeAddModal: $('closeAddToPlaylistModal'),
+  addMeta: $('addTrackTitleArtist'),
+  addOptions: $('addToPlaylistOptions'),
+  quickCreateBtn: $('quickCreatePlaylistBtn'),
+};
+
+function setAuthMode(mode) {
+  authMode = mode;
+  authEls.errorMsg.hidden = true;
+  authEls.errorMsg.textContent = '';
+  if (mode === 'login') {
+    authEls.tabSignIn.classList.add('active');
+    authEls.tabSignIn.setAttribute('aria-selected', 'true');
+    authEls.tabSignUp.classList.remove('active');
+    authEls.tabSignUp.setAttribute('aria-selected', 'false');
+    authEls.title.textContent = 'Welcome back';
+    authEls.sub.textContent = 'Enter your password to unlock your playlists.';
+    authEls.submitBtn.innerHTML = '<span>Sign In</span>';
+  } else {
+    authEls.tabSignUp.classList.add('active');
+    authEls.tabSignUp.setAttribute('aria-selected', 'true');
+    authEls.tabSignIn.classList.remove('active');
+    authEls.tabSignIn.setAttribute('aria-selected', 'false');
+    authEls.title.textContent = 'Create New Account';
+    authEls.sub.textContent = 'Choose a username and password to protect your playlists.';
+    authEls.submitBtn.innerHTML = '<span>Create Account</span>';
+  }
+}
+
+function openAuth(mode = 'login') {
+  setAuthMode(mode);
+  authEls.username.value = '';
+  authEls.password.value = '';
+  authEls.modal.hidden = false;
+  setTimeout(() => authEls.username.focus(), 80);
+}
+function closeAuth() {
+  authEls.modal.hidden = true;
+}
+
+authEls.openBtn?.addEventListener('click', () => openAuth('login'));
+authEls.gateSignIn?.addEventListener('click', () => openAuth('login'));
+authEls.gateSignUp?.addEventListener('click', () => openAuth('register'));
+authEls.closeBtn?.addEventListener('click', closeAuth);
+authEls.tabSignIn?.addEventListener('click', () => setAuthMode('login'));
+authEls.tabSignUp?.addEventListener('click', () => setAuthMode('register'));
+authEls.modal?.addEventListener('click', (e) => {
+  if (e.target === authEls.modal) closeAuth();
+});
+
+authEls.form?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = authEls.username.value.trim();
+  const password = authEls.password.value.trim();
+  if (!username || !password) return;
+
+  authEls.errorMsg.hidden = true;
+  authEls.submitBtn.disabled = true;
+  const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Authentication failed');
+    }
+    state.user = data.user;
+    updateUserUI();
+    closeAuth();
+    showToast(authMode === 'login' ? `Welcome back, ${data.user.username}!` : `Account created! Welcome, ${data.user.username}`);
+    loadPlaylists();
+  } catch (err) {
+    authEls.errorMsg.textContent = err.message;
+    authEls.errorMsg.hidden = false;
+  } finally {
+    authEls.submitBtn.disabled = false;
+  }
+});
+
+authEls.logoutBtn?.addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) {}
+  state.user = null;
+  state.playlists = [];
+  updateUserUI();
+  showToast('Signed out');
+});
+
+function updateUserUI() {
+  if (state.user) {
+    authEls.authActions.style.display = 'none';
+    authEls.userProfile.style.display = 'inline-flex';
+    authEls.displayUsername.textContent = state.user.username;
+    authEls.gateCard.style.display = 'none';
+    authEls.grid.style.display = 'grid';
+    authEls.sectionActions.style.display = 'block';
+  } else {
+    authEls.authActions.style.display = 'block';
+    authEls.userProfile.style.display = 'none';
+    authEls.gateCard.style.display = 'block';
+    authEls.grid.style.display = 'none';
+    authEls.sectionActions.style.display = 'none';
+    authEls.grid.innerHTML = '';
+  }
+}
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/auth/me');
+    const data = await res.json();
+    if (data.authenticated && data.user) {
+      state.user = data.user;
+      updateUserUI();
+      loadPlaylists();
+    } else {
+      state.user = null;
+      updateUserUI();
+    }
+  } catch (err) {
+    console.error('Failed to verify session:', err);
+    state.user = null;
+    updateUserUI();
+  }
+}
+
+/* Playlists Operations */
+async function loadPlaylists() {
+  if (!state.user) return;
+  try {
+    const res = await fetch('/api/playlists');
+    if (!res.ok) return;
+    const data = await res.json();
+    state.playlists = data.playlists || [];
+    renderPlaylists();
+  } catch (err) {
+    console.error('Failed to load playlists:', err);
+  }
+}
+
+function renderPlaylists() {
+  authEls.grid.innerHTML = '';
+  if (!state.playlists.length) {
+    authEls.grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">No playlists yet. Click "+ New Playlist" to create one!</div>';
+    return;
+  }
+  state.playlists.forEach((p) => {
+    const card = document.createElement('div');
+    card.className = 'playlist-card';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.innerHTML = `
+      <div class="playlist-cover-box">
+        ${p.cover ? `<img alt="" src="${esc(p.cover)}" onerror="this.style.display='none'">` : '<div class="pl-fallback">🎵</div>'}
+      </div>
+      <div class="pl-name">${esc(p.name)}</div>
+      <div class="pl-count">${p.track_count} track${p.track_count === 1 ? '' : 's'}</div>
+    `;
+    card.addEventListener('click', () => openPlaylistDetails(p.id));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlaylistDetails(p.id); }
+    });
+    authEls.grid.appendChild(card);
+  });
+}
+
+// Create Playlist
+authEls.openNewPlBtn?.addEventListener('click', () => {
+  authEls.newPlName.value = '';
+  authEls.newPlModal.hidden = false;
+  setTimeout(() => authEls.newPlName.focus(), 80);
+});
+authEls.closeNewPlBtn?.addEventListener('click', () => { authEls.newPlModal.hidden = true; });
+authEls.cancelNewPlBtn?.addEventListener('click', () => { authEls.newPlModal.hidden = true; });
+authEls.newPlModal?.addEventListener('click', (e) => {
+  if (e.target === authEls.newPlModal) authEls.newPlModal.hidden = true;
+});
+
+authEls.newPlForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = authEls.newPlName.value.trim();
+  if (!name) return;
+  try {
+    const res = await fetch('/api/playlists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create');
+    authEls.newPlModal.hidden = true;
+    showToast(`Created playlist "${name}"`);
+    loadPlaylists();
+  } catch (err) {
+    showToast(err.message);
+  }
+});
+
+// Playlist Details Modal
+async function openPlaylistDetails(playlistId) {
+  currentViewingPlaylistId = playlistId;
+  authEls.detailTracks.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">Loading tracks...</div>';
+  authEls.detailModal.hidden = false;
+
+  try {
+    const res = await fetch(`/api/playlists/${playlistId}`);
+    if (!res.ok) throw new Error('Could not load playlist');
+    const data = await res.json();
+    const pl = data.playlist;
+    const tracks = data.tracks || [];
+
+    authEls.detailName.textContent = pl.name;
+    authEls.detailMeta.textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+
+    authEls.playAllBtn.onclick = () => {
+      if (!tracks.length) { showToast('Playlist is empty'); return; }
+      state.queue = tracks.slice();
+      state.currentIdx = 0;
+      playCurrent();
+      authEls.detailModal.hidden = true;
+      showToast(`Playing playlist "${pl.name}"`);
+    };
+
+    authEls.deletePlBtn.onclick = async () => {
+      if (!confirm(`Are you sure you want to delete "${pl.name}"?`)) return;
+      try {
+        const dRes = await fetch(`/api/playlists/${playlistId}`, { method: 'DELETE' });
+        if (dRes.ok) {
+          authEls.detailModal.hidden = true;
+          showToast(`Deleted "${pl.name}"`);
+          loadPlaylists();
+        }
+      } catch (e) {
+        showToast('Failed to delete playlist');
+      }
+    };
+
+    authEls.detailTracks.innerHTML = '';
+    if (!tracks.length) {
+      authEls.detailTracks.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">This playlist is empty. Search songs and tap ❤️ to save them here!</div>';
+      return;
+    }
+
+    tracks.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'pl-track-item';
+      row.innerHTML = `
+        <img alt="" src="${esc(t.cover)}" onerror="this.style.background='var(--surface)'">
+        <div class="pl-meta">
+          <div class="pl-title">${esc(t.title)}</div>
+          <div class="pl-artist">${esc(t.artist)}${t.duration_ms ? ' · ' + fmt(t.duration_ms / 1000) : ''}</div>
+        </div>
+        <div class="pl-item-btns">
+          <button class="pl-play-btn" title="Play"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+          <button class="pl-del-btn" title="Remove from playlist">&times;</button>
+        </div>
+      `;
+      row.querySelector('.pl-play-btn').addEventListener('click', () => {
+        state.queue = tracks.slice();
+        state.currentIdx = i;
+        playCurrent();
+      });
+      row.querySelector('.pl-del-btn').addEventListener('click', async () => {
+        try {
+          const rRes = await fetch(`/api/playlists/${playlistId}/tracks/${t.id}`, { method: 'DELETE' });
+          if (rRes.ok) {
+            row.remove();
+            showToast(`Removed from playlist`);
+            openPlaylistDetails(playlistId);
+            loadPlaylists();
+          }
+        } catch (e) {
+          showToast('Failed to remove track');
+        }
+      });
+      authEls.detailTracks.appendChild(row);
+    });
+  } catch (err) {
+    authEls.detailTracks.innerHTML = `<div style="padding:20px;text-align:center;color:#ff7e9e">${err.message}</div>`;
+  }
+}
+
+authEls.closeDetailModal?.addEventListener('click', () => { authEls.detailModal.hidden = true; });
+authEls.detailModal?.addEventListener('click', (e) => {
+  if (e.target === authEls.detailModal) authEls.detailModal.hidden = true;
+});
+
+// Add Track to Playlist Flow
+function openAddToPlaylistModal(track) {
+  if (!state.user) {
+    showToast('Please sign in to save songs to playlists');
+    openAuth('login');
+    return;
+  }
+  targetTrackForPlaylist = track;
+  authEls.addMeta.textContent = `Save “${track.title}” by ${track.artist}`;
+  authEls.addOptions.innerHTML = '';
+
+  if (!state.playlists.length) {
+    authEls.addOptions.innerHTML = '<div style="padding:14px;color:var(--muted);text-align:center">No playlists found. Create one below!</div>';
+  } else {
+    state.playlists.forEach((p) => {
+      const btn = document.createElement('button');
+      btn.className = 'add-pl-btn';
+      btn.innerHTML = `<span>${esc(p.name)}</span> <span class="pl-badge">${p.track_count} tracks</span>`;
+      btn.addEventListener('click', async () => {
+        try {
+          const res = await fetch(`/api/playlists/${p.id}/tracks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(targetTrackForPlaylist)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to add');
+          authEls.addModal.hidden = true;
+          showToast(`Saved to "${p.name}" ❤️`);
+          loadPlaylists();
+        } catch (err) {
+          showToast(err.message);
+        }
+      });
+      authEls.addOptions.appendChild(btn);
+    });
+  }
+
+  authEls.addModal.hidden = false;
+}
+
+authEls.closeAddModal?.addEventListener('click', () => { authEls.addModal.hidden = true; });
+authEls.addModal?.addEventListener('click', (e) => {
+  if (e.target === authEls.addModal) authEls.addModal.hidden = true;
+});
+authEls.quickCreateBtn?.addEventListener('click', () => {
+  authEls.addModal.hidden = true;
+  authEls.openNewPlBtn.click();
+});
+
+/* =====================================================================
    Boot
    ===================================================================== */
 renderQueue();
 loadMoods();
+checkAuth();
 doSearch('top hits 2025', 'Trending today');
+

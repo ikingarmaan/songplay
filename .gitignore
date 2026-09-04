@@ -32,3 +32,8 @@ node_modules/
 
 # OS
 Thumbs.db
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

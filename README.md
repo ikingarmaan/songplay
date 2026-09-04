@@ -10,6 +10,8 @@ A single-page music player with a polished glassmorphism + neon theme. Search an
 ## ✨ Features
 
 - 🎵 **Full songs for free** — unlimited streaming of complete tracks in crystal-clear high bitrate (160kbps AAC audio)
+- 🔐 **Password-Protected User Accounts** — Sign in or create an account with your desired password to secure your playlists
+- 📁 **Custom Playlists** — Create unlimited private playlists, save tracks with one click, and stream full playlists with "Play All"
 - 🔍 **Smart search** — type any song, artist, or mood and get matching tracks with high-res 500x500 album art
 - 🎚️ **Full media player** — play/pause, next/prev, shuffle, loop, seekable progress bar, volume slider with mute
 - 📀 **Animated vinyl disc** that spins while music plays

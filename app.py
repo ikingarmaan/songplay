@@ -11,6 +11,7 @@ import html
 import json
 import logging
 import os
+import sqlite3
 import time
 import warnings
 from typing import Any
@@ -24,12 +25,16 @@ from flask import (
     render_template,
     request,
     send_from_directory,
+    session,
 )
 from flask_caching import Cache
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # ---------------------------------------------------------------------------
-# Config
+# Config & Database
 # ---------------------------------------------------------------------------
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "songplay.db")
+
 SAAVN_ENDPOINT = "https://www.jiosaavn.com/api.php"
 SAAVN_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -45,12 +50,62 @@ DEFAULT_LIMIT = 24
 MAX_LIMIT = 50
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
+app.secret_key = os.environ.get("SECRET_KEY", "songplay-session-key-dev-2026")
 app.config["CACHE_TYPE"] = "SimpleCache"
 app.config["CACHE_DEFAULT_TIMEOUT"] = CACHE_TTL
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 cache = Cache(app)
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(message)s")
 log = logging.getLogger("songplay")
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db():
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id INTEGER NOT NULL,
+                track_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                album TEXT DEFAULT '',
+                cover TEXT DEFAULT '',
+                preview TEXT NOT NULL,
+                duration_ms INTEGER DEFAULT 180000,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+            )
+        """)
+        conn.commit()
+
+
+init_db()
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +345,212 @@ def api_suggest() -> Response:
     ]
     return jsonify({"packs": packs})
 
+
+# ---------------------------------------------------------------------------
+# Auth Helpers & Endpoints
+# ---------------------------------------------------------------------------
+def get_current_user() -> dict[str, Any] | None:
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    try:
+        with get_db() as conn:
+            user = conn.execute("SELECT id, username, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+            if user:
+                return dict(user)
+    except Exception as exc:
+        log.warning("get_current_user error: %s", exc)
+    return None
+
+
+@app.post("/api/auth/register")
+def api_register() -> Response:
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+
+    if not username or len(username) < 2:
+        return jsonify({"error": "Username must be at least 2 characters"}), 400
+    if len(username) > 30:
+        return jsonify({"error": "Username must be under 30 characters"}), 400
+    if not password or len(password) < 4:
+        return jsonify({"error": "Password must be at least 4 characters"}), 400
+
+    password_hash = generate_password_hash(password)
+    try:
+        with get_db() as conn:
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, password_hash)
+            )
+            user_id = cur.lastrowid
+            # Create a default "Favorites" playlist for new users
+            conn.execute("INSERT INTO playlists (user_id, name) VALUES (?, ?)", (user_id, "Favorites"))
+            conn.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Username is already taken"}), 409
+
+    session["user_id"] = user_id
+    session["username"] = username
+    return jsonify({"status": "ok", "user": {"id": user_id, "username": username}})
+
+
+@app.post("/api/auth/login")
+def api_login() -> Response:
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Please enter both username and password"}), 400
+
+    with get_db() as conn:
+        user = conn.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,)).fetchone()
+        if not user or not check_password_hash(user["password_hash"], password):
+            return jsonify({"error": "Invalid username or password"}), 401
+
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
+        return jsonify({"status": "ok", "user": {"id": user["id"], "username": user["username"]}})
+
+
+@app.post("/api/auth/logout")
+def api_logout() -> Response:
+    session.clear()
+    return jsonify({"status": "ok"})
+
+
+@app.get("/api/auth/me")
+def api_me() -> Response:
+    user = get_current_user()
+    if not user:
+        return jsonify({"authenticated": False, "user": None})
+    return jsonify({"authenticated": True, "user": user})
+
+
+# ---------------------------------------------------------------------------
+# Playlist Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/playlists")
+def api_get_playlists() -> Response:
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Sign in to access your playlists"}), 401
+
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT p.id, p.name, p.created_at,
+                   COUNT(t.id) AS track_count,
+                   (SELECT cover FROM playlist_tracks WHERE playlist_id = p.id ORDER BY id ASC LIMIT 1) AS cover
+            FROM playlists p
+            LEFT JOIN playlist_tracks t ON p.id = t.playlist_id
+            WHERE p.user_id = ?
+            GROUP BY p.id
+            ORDER BY p.id ASC
+        """, (user["id"],)).fetchall()
+        return jsonify({"playlists": [dict(r) for r in rows]})
+
+
+@app.post("/api/playlists")
+def api_create_playlist() -> Response:
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Sign in to create a playlist"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Playlist name is required"}), 400
+    if len(name) > 60:
+        return jsonify({"error": "Playlist name is too long"}), 400
+
+    with get_db() as conn:
+        cur = conn.execute("INSERT INTO playlists (user_id, name) VALUES (?, ?)", (user["id"], name))
+        pid = cur.lastrowid
+        conn.commit()
+    return jsonify({"status": "ok", "playlist": {"id": pid, "name": name, "track_count": 0, "cover": ""}})
+
+
+@app.delete("/api/playlists/<int:playlist_id>")
+def api_delete_playlist(playlist_id: int) -> Response:
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    with get_db() as conn:
+        res = conn.execute("DELETE FROM playlists WHERE id = ? AND user_id = ?", (playlist_id, user["id"]))
+        conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
+        conn.commit()
+        if res.rowcount == 0:
+            return jsonify({"error": "Playlist not found"}), 404
+    return jsonify({"status": "ok"})
+
+
+@app.get("/api/playlists/<int:playlist_id>")
+def api_get_playlist_details(playlist_id: int) -> Response:
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    with get_db() as conn:
+        p = conn.execute("SELECT id, name, created_at FROM playlists WHERE id = ? AND user_id = ?", (playlist_id, user["id"])).fetchone()
+        if not p:
+            return jsonify({"error": "Playlist not found"}), 404
+        tracks = conn.execute("""
+            SELECT id, track_id, title, artist, album, cover, preview, duration_ms, added_at
+            FROM playlist_tracks
+            WHERE playlist_id = ?
+            ORDER BY id ASC
+        """, (playlist_id,)).fetchall()
+        return jsonify({"playlist": dict(p), "tracks": [dict(t) for t in tracks]})
+
+
+@app.post("/api/playlists/<int:playlist_id>/tracks")
+def api_add_track_to_playlist(playlist_id: int) -> Response:
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Sign in to save songs to playlists"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    track_id = str(data.get("id") or "")
+    title = (data.get("title") or "Unknown").strip()
+    artist = (data.get("artist") or "Unknown").strip()
+    album = (data.get("album") or "").strip()
+    cover = (data.get("cover") or "").strip()
+    preview = (data.get("preview") or "").strip()
+    duration_ms = int(data.get("duration_ms") or 180000)
+
+    if not preview:
+        return jsonify({"error": "Missing audio stream URL"}), 400
+
+    with get_db() as conn:
+        p = conn.execute("SELECT id FROM playlists WHERE id = ? AND user_id = ?", (playlist_id, user["id"])).fetchone()
+        if not p:
+            return jsonify({"error": "Playlist not found"}), 404
+
+        exists = conn.execute(
+            "SELECT id FROM playlist_tracks WHERE playlist_id = ? AND (track_id = ? OR (title = ? AND artist = ?))",
+            (playlist_id, track_id, title, artist)
+        ).fetchone()
+        if exists:
+            return jsonify({"error": "Track already in this playlist"}), 409
+
+        conn.execute("""
+            INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, album, cover, preview, duration_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (playlist_id, track_id, title, artist, album, cover, preview, duration_ms))
+        conn.commit()
+    return jsonify({"status": "ok", "message": f"Added '{title}' to playlist"})
+
+
+@app.delete("/api/playlists/<int:playlist_id>/tracks/<int:item_id>")
+def api_remove_track_from_playlist(playlist_id: int, item_id: int) -> Response:
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    with get_db() as conn:
+        p = conn.execute("SELECT id FROM playlists WHERE id = ? AND user_id = ?", (playlist_id, user["id"])).fetchone()
+        if not p:
+            return jsonify({"error": "Playlist not found"}), 404
+        conn.execute("DELETE FROM playlist_tracks WHERE id = ? AND playlist_id = ?", (item_id, playlist_id))
+        conn.commit()
+    return jsonify({"status": "ok"})
 
 
 # ---------------------------------------------------------------------------
