@@ -644,7 +644,7 @@ img { display: block; max-width: 100%; }
   position: fixed; right: 16px; bottom: calc(100px + 14px);
   width: 360px; max-width: calc(100vw - 32px);
   max-height: min(70vh, 600px);
-  z-index: 90;
+  z-index: 650;
   background: color-mix(in srgb, var(--bg-1) 92%, transparent);
   border: 1px solid var(--border-hi);
   border-radius: var(--radius-lg);
@@ -693,7 +693,7 @@ img { display: block; max-width: 100%; }
 .queue-hint { padding: 14px 20px; font-size: 12px; text-align: center; border-top: 1px solid var(--border); }
 
 .scrim {
-  position: fixed; inset: 0; z-index: 70;
+  position: fixed; inset: 0; z-index: 600;
   background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(2px);
   opacity: 0; transition: opacity 0.3s var(--ease);
 }
@@ -708,7 +708,7 @@ img { display: block; max-width: 100%; }
   background: var(--text); color: var(--bg-0);
   padding: 10px 18px; border-radius: 99px;
   font-size: 13px; font-weight: 500;
-  z-index: 200; opacity: 0; pointer-events: none;
+  z-index: 800; opacity: 0; pointer-events: none;
   transition: 0.3s var(--ease);
   box-shadow: var(--shadow-md);
   max-width: 80vw;
@@ -802,7 +802,7 @@ img { display: block; max-width: 100%; }
 
 /* modals */
 .modal-backdrop {
-  position: fixed; inset: 0; z-index: 100;
+  position: fixed; inset: 0; z-index: 700;
   background: rgba(4, 3, 10, 0.75); backdrop-filter: blur(14px);
   display: grid; place-items: center; padding: 20px;
 }
@@ -915,12 +915,25 @@ img { display: block; max-width: 100%; }
    Fullscreen Player
    ============================================================ */
 .fullscreen-player {
-  position: fixed; inset: 0; z-index: 150;
+  position: fixed; inset: 0; z-index: 500;
   background: var(--bg-0); overflow: hidden;
   display: flex; justify-content: center; align-items: center;
   animation: fadeIn 0.3s var(--ease);
 }
 .fullscreen-player[hidden] { display: none !important; }
+
+/* Native Fullscreen API compatibility */
+.fullscreen-player:fullscreen,
+.fullscreen-player:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  position: fixed;
+  inset: 0;
+  border: 0;
+  z-index: 2147483647;
+}
 
 /* Dynamic Audio-Reactive Canvas */
 .fs-canvas {

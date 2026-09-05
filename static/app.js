@@ -73,6 +73,7 @@ const fsEls = {
   eqBtn: $('fsEqBtn'),
   sleepTimerBtn: $('fsSleepTimerBtn'),
   shareBtn: $('fsShareBtn'),
+  queueBtn: $('fsQueueBtn'),
   stage: $('fsStage'),
   artWrapper: $('fsArtWrapper'),
   art: $('fsArt'),
@@ -666,15 +667,15 @@ window.addEventListener('keydown', (e) => {
     if (shortcutEls.modal) shortcutEls.modal.hidden = !shortcutEls.modal.hidden;
   }
   else if (e.key === 'Escape') {
-    if (fsEls.container && !fsEls.container.hidden) closeFullscreenPlayer();
-    else if (shortcutEls.modal && !shortcutEls.modal.hidden) shortcutEls.modal.hidden = true;
+    if (shortcutEls.modal && !shortcutEls.modal.hidden) shortcutEls.modal.hidden = true;
     else if (eqEls.modal && !eqEls.modal.hidden) eqEls.modal.hidden = true;
     else if (sleepEls.modal && !sleepEls.modal.hidden) sleepEls.modal.hidden = true;
     else if (authEls.modal && !authEls.modal.hidden) closeAuth();
     else if (authEls.newPlModal && !authEls.newPlModal.hidden) authEls.newPlModal.hidden = true;
     else if (authEls.detailModal && !authEls.detailModal.hidden) authEls.detailModal.hidden = true;
     else if (authEls.addModal && !authEls.addModal.hidden) authEls.addModal.hidden = true;
-    else closeQueue();
+    else if (els.queue && els.queue.classList.contains('open')) closeQueue();
+    else if (fsEls.container && !fsEls.container.hidden) closeFullscreenPlayer();
   }
 });
 
@@ -2133,10 +2134,14 @@ fsEls.prevBtn?.addEventListener('click', prevTrack);
 fsEls.shuffleBtn?.addEventListener('click', () => els.shuffleBtn.click());
 fsEls.loopBtn?.addEventListener('click', () => els.loopBtn.click());
 
-/* Open/close triggers */
+/* Fullscreen triggers & buttons */
 els.fullscreenBtn?.addEventListener('click', openFullscreenPlayer);
 els.cover?.addEventListener('click', openFullscreenPlayer);
 fsEls.closeBtn?.addEventListener('click', closeFullscreenPlayer);
+fsEls.queueBtn?.addEventListener('click', () => {
+  if (els.queue && els.queue.classList.contains('open')) closeQueue();
+  else openQueue();
+});
 
 /* Fullscreen & player bar save button */
 function handleSaveCurrentSong() {
@@ -2151,19 +2156,63 @@ els.playerSaveBtn?.addEventListener('click', handleSaveCurrentSong);
 fsEls.saveBtn?.addEventListener('click', handleSaveCurrentSong);
 
 /* Native browser fullscreen */
-fsEls.nativeBtn?.addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    if (fsEls.container.requestFullscreen) {
-      fsEls.container.requestFullscreen().catch(() => {});
+function toggleNativeFullscreen() {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+  if (!isFs) {
+    const target = document.documentElement;
+    const req = target.requestFullscreen || target.webkitRequestFullscreen || target.mozRequestFullScreen || target.msRequestFullscreen;
+    if (req) {
+      req.call(target).catch(() => {
+        if (fsEls.container?.requestFullscreen) fsEls.container.requestFullscreen().catch(() => {});
+      });
     }
   } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen().catch(() => {});
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+    if (exit) {
+      exit.call(document).catch(() => {});
     }
   }
-});
+}
+fsEls.nativeBtn?.addEventListener('click', toggleNativeFullscreen);
 
-/* Keyboard shortcuts: F for fullscreen, Esc for exit */
+/* Top-layer portal resilience for native fullscreen */
+function handleFullscreenChange() {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+  const fsTarget = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement;
+
+  // Update OS Fullscreen button state and label
+  if (fsEls.nativeBtn) {
+    fsEls.nativeBtn.innerHTML = isFs
+      ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg><span>Exit OS Fullscreen</span>'
+      : '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg><span>OS Fullscreen</span>';
+    fsEls.nativeBtn.classList.toggle('active', isFs);
+  }
+
+  // If a sub-element (like fsEls.container) is in fullscreen top-layer,
+  // move all modals, queue, scrim, and toast inside it so they are not hidden
+  const overlays = document.querySelectorAll('.modal-backdrop, #queue, #scrim, #toast');
+  if (fsTarget && fsTarget !== document.documentElement && fsTarget !== document.body) {
+    overlays.forEach(el => {
+      if (!fsTarget.contains(el)) {
+        el._originalParent = el.parentNode;
+        fsTarget.appendChild(el);
+      }
+    });
+  } else {
+    // Restore overlays to document.body when not in sub-element fullscreen
+    overlays.forEach(el => {
+      if (el._originalParent && el._originalParent !== el.parentNode) {
+        el._originalParent.appendChild(el);
+        delete el._originalParent;
+      }
+    });
+  }
+}
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+
+/* Keyboard shortcut: F for fullscreen */
 window.addEventListener('keydown', (e) => {
   const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
   if (tag === 'input' || tag === 'textarea') return;
@@ -2173,11 +2222,6 @@ window.addEventListener('keydown', (e) => {
     if (fsEls.container.hidden) {
       openFullscreenPlayer();
     } else {
-      closeFullscreenPlayer();
-    }
-  } else if (e.key === 'Escape') {
-    if (!fsEls.container.hidden) {
-      e.preventDefault();
       closeFullscreenPlayer();
     }
   }
