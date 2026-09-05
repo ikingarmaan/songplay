@@ -192,9 +192,9 @@ def apply_security_headers(response: Response) -> Response:
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:; "
-        "img-src 'self' data: blob: https: *; "
-        "media-src 'self' data: blob: https: *; "
-        "connect-src 'self' https://*.jiosaavn.com https://itunes.apple.com https://lrclib.net; "
+        "img-src * data: blob: 'self'; "
+        "media-src * data: blob: 'self'; "
+        "connect-src * 'self'; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self';"
@@ -327,7 +327,10 @@ def _decrypt_saavn_media_url(enc: str) -> str | None:
             return None
 
         # Upgrade from 96kbps to 160kbps high-quality AAC stream
-        return url.replace("_96.mp4", "_160.mp4")
+        url = url.replace("_96.mp4", "_160.mp4")
+        if url.startswith("http://"):
+            url = "https://" + url[7:]
+        return url
     except Exception as exc:
         log.warning("Failed to decrypt media url: %s", exc)
         return None
@@ -364,6 +367,8 @@ def _normalize_saavn_track(item: dict[str, Any]) -> dict[str, Any] | None:
     # Crisp 500x500 album art
     raw_img = item.get("image") or ""
     cover = raw_img.replace("150x150", "500x500").replace("50x50", "500x500")
+    if cover.startswith("http://"):
+        cover = "https://" + cover[7:]
 
     # Track duration (full song in seconds -> ms)
     try:
@@ -391,9 +396,11 @@ def _normalize_saavn_track(item: dict[str, Any]) -> dict[str, Any] | None:
 
 def _normalize_itunes_track(item: dict[str, Any]) -> dict[str, Any] | None:
     """Map an iTunes result row into our clean public schema (fallback)."""
-    preview = item.get("previewUrl")
+    preview = item.get("previewUrl") or ""
     if not preview:
         return None
+    if preview.startswith("http://"):
+        preview = "https://" + preview[7:]
     cover = (item.get("artworkUrl100") or "").replace("100x100bb", "300x300bb")
     return {
         "id": f"itunes_{item.get('trackId')}",

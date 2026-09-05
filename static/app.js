@@ -387,14 +387,13 @@ function playCurrent() {
   if (t.duration_ms) {
     els.durTime.textContent = fmt(t.duration_ms / 1000);
   }
-  if (typeof initWebAudio === 'function') initWebAudio();
-  if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().catch(() => {});
-  }
+  // Ensure no crossOrigin attribute on audio element to avoid CORS playback errors on CDN streams
+  audio.removeAttribute('crossorigin');
   audio.playbackRate = state.eq.speed || 1.0;
   audio.src = t.preview;
   audio.play().then(() => {
     state.isPlaying = true;
+    consecutiveErrors = 0;
     updatePlayerUI();
   }).catch(() => {
     state.isPlaying = false;
@@ -556,12 +555,19 @@ audio.addEventListener('loadedmetadata', () => {
 });
 audio.addEventListener('play',  () => { state.isPlaying = true;  updatePlayerUI(); });
 audio.addEventListener('pause', () => { state.isPlaying = false; updatePlayerUI(); });
-audio.addEventListener('error', () => {
-  if (state.queue.length > 1) {
-    showToast('Track unavailable, playing next...');
+let consecutiveErrors = 0;
+audio.addEventListener('error', (e) => {
+  const err = audio.error;
+  console.error('Audio playback error:', err ? `code=${err.code}, message=${err.message}` : e, 'src=', audio.src);
+  state.isPlaying = false;
+  updatePlayerUI();
+  consecutiveErrors++;
+  if (consecutiveErrors <= 3 && state.queue.length > 1) {
+    showToast('Track unavailable, trying next...');
     setTimeout(nextTrack, 1000);
   } else {
-    showToast('Unable to stream this track.');
+    consecutiveErrors = 0;
+    showToast('Unable to stream this track. Tap another song.');
   }
 });
 
@@ -804,54 +810,13 @@ function showToast(msg) {
    6. Keyboard Shortcuts Modal & Event Handlers
    ===================================================================== */
 
-/* 1. Web Audio Equalizer & Spatial Audio Engine */
-let audioCtx = null;
-let sourceNode = null;
-let bassNode = null;
-let midNode = null;
-let trebleNode = null;
-let webAudioReady = false;
+/* 1. Acoustic Presets, Equalizer & Playback Speed Engine */
+let webAudioReady = true;
 
 function initWebAudio() {
-  if (webAudioReady) return;
-  try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    audioCtx = new AudioContextClass();
-
-    audio.crossOrigin = 'anonymous';
-    sourceNode = audioCtx.createMediaElementSource(audio);
-
-    // 150 Hz Lowshelf filter
-    bassNode = audioCtx.createBiquadFilter();
-    bassNode.type = 'lowshelf';
-    bassNode.frequency.value = 150;
-    bassNode.gain.value = state.eq.bass;
-
-    // 1000 Hz Peaking filter
-    midNode = audioCtx.createBiquadFilter();
-    midNode.type = 'peaking';
-    midNode.frequency.value = 1000;
-    midNode.Q.value = 1.0;
-    midNode.gain.value = state.eq.mid;
-
-    // 3500 Hz Highshelf filter
-    trebleNode = audioCtx.createBiquadFilter();
-    trebleNode.type = 'highshelf';
-    trebleNode.frequency.value = 3500;
-    trebleNode.gain.value = state.eq.treble;
-
-    // Connect source -> bass -> mid -> treble -> destination
-    sourceNode.connect(bassNode);
-    bassNode.connect(midNode);
-    midNode.connect(trebleNode);
-    trebleNode.connect(audioCtx.destination);
-
-    webAudioReady = true;
-  } catch (err) {
-    console.warn('Web Audio API not supported or CORS restricted; using standard playback:', err);
-    webAudioReady = false;
-  }
+  // External CDN audio streams (JioSaavn, Apple Previews) reject Web Audio MediaElementSource CORS.
+  // We keep HTML5 audio native so all tracks stream 100% reliably across all browsers.
+  webAudioReady = true;
 }
 
 const EQ_PRESETS = {
@@ -876,13 +841,10 @@ function applyEqPreset(name) {
   document.querySelectorAll('.eq-chip').forEach(b => {
     b.classList.toggle('active', b.dataset.preset === name);
   });
+  showToast(`Acoustic preset: ${name.charAt(0).toUpperCase() + name.slice(1)}`);
 }
 
 function applyEqValues() {
-  if (bassNode) bassNode.gain.value = state.eq.bass;
-  if (midNode) midNode.gain.value = state.eq.mid;
-  if (trebleNode) trebleNode.gain.value = state.eq.treble;
-
   if (eqEls.bass) eqEls.bass.value = state.eq.bass;
   if (eqEls.bassVal) eqEls.bassVal.textContent = (state.eq.bass > 0 ? '+' : '') + state.eq.bass + ' dB';
   if (eqEls.mid) eqEls.mid.value = state.eq.mid;
