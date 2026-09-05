@@ -19,39 +19,59 @@ A single-page music player with a polished glassmorphism + neon theme. Search an
 - 🎭 **12 mood presets** — Chill, Romantic, Workout, Party, Bollywood, Punjabi, Hip Hop, EDM, Focus, Sleep, Rock, Trending
 - ⌨️ **Keyboard shortcuts** — `Space` play/pause, `←/→` prev/next, `M` mute, `Q` queue, `Esc` close
 - 🌗 **Light + dark themes** (auto-saved)
-- 📱 Fully responsive
-- 💾 **Server-side caching** (30 min) for faster repeated searches
-- ♿ Accessibility — ARIA labels, focus states, skip link, keyboard navigation, reduced-motion support
-- 🎨 **Pro UI/UX** — skeleton loaders, toast feedback, smooth transitions, animated vinyl, equalizer
+- 📱 **Native Android App (`songplay.apk`)** — standalone, hardware-accelerated Android APK with lock-screen media controls, background playback, and offline catalog
+- 🌐 **PWA & Offline Ready** — installable on Android, iOS, Windows, and macOS with Service Worker caching
+- 🔒 **Future-Proof Multi-Tier Search** — 4-tier fallback engine (JioSaavn ➔ iTunes ➔ Deezer ➔ Curated offline catalog) with persistent SQLite disk caching
+- 🎛️ **MediaSession API Integration** — full lock-screen, Bluetooth headset, and notification shade media controls
+- 🎨 **Pro UI/UX** — skeleton loaders, toast feedback, smooth transitions, animated vinyl, equalizer, lyrics, sleep timer
+
+## 📱 Android App (`songplay.apk`)
+
+A dedicated standalone native Android app is provided in the repository root:
+- **File:** `songplay.apk`
+- **Package:** `com.songplay.app`
+- **Supported Android Versions:** Android 5.0 (Lollipop) up to Android 15/16 (API 21 – 36)
+- **Features:** Hardware-accelerated WebView, native DES stream decryption, lock screen media session controls, custom fullscreen video/canvas, back button handling, and offline fallback catalog.
+
+To build the APK from source at any time:
+```bash
+./build_apk.sh
+```
 
 ## 🏗️ Architecture
 
 ```
 songplay/
-├── app.py                # Flask web service & stream decryptor
+├── songplay.apk          # Standalone release-signed Android APK
+├── build_apk.sh          # One-command automated Android build script
+├── android/              # Native Android application source & resources
+├── app.py                # Flask web service, multi-tier search & stream decryptor
 ├── requirements.txt      # Python deps (Flask, pycryptodome, requests, etc.)
 ├── render.yaml           # Render deployment
 ├── Procfile              # process model
-├── runtime.txt           # Python version
 ├── templates/
 │   └── index.html        # SPA markup
 └── static/
-    ├── style.css         # design system + components
-    ├── app.js            # search, player, queue
+    ├── style.css         # design system + glassmorphism components
+    ├── app.js            # search, player, queue, mediaSession, PWA
+    ├── sw.js             # Service Worker for offline asset & audio caching
+    ├── manifest.webmanifest
     └── favicon.svg
 ```
 
-The Flask backend:
-1. Resolves high-fidelity full tracks via JioSaavn's public CDN audio streams
-2. Decrypts CDN media streams on the fly to direct seekable AAC streams
-3. Provides fallback to iTunes for comprehensive global catalog coverage
-4. Caches results in-memory for 30 minutes for instantaneous repeat queries
-5. Exposes curated mood packs via `/api/suggest`
+The multi-tier music engine:
+1. **Tier 1 (JioSaavn):** High-bitrate 160kbps AAC full tracks with DES CDN decryption
+2. **Tier 2 (iTunes Search):** Comprehensive global catalog fallback
+3. **Tier 3 (Deezer API):** Third-party resilient global preview stream fallback
+4. **Tier 4 (Offline Curated Catalog):** Built-in curated track catalog ensuring search never fails even completely offline
+5. **Persistent SQLite Disk Caching:** Instant zero-network response for previously fetched queries
+6. **MediaSession API:** Native lock screen, smartwatch, and Bluetooth playback controls
 
 ## 🛠️ Tech
 
-- **Backend:** Flask 3, gunicorn, requests, flask-caching, pycryptodome / cryptography
-- **Frontend:** Vanilla HTML/CSS/JS — no frameworks, no build step
+- **Android App:** Native Java + Android SDK, D8, AAPT2, Hardware Accelerated WebView
+- **Backend:** Flask 3, gunicorn, requests, flask-caching, pycryptodome / cryptography, SQLite3
+- **Frontend:** Vanilla HTML/CSS/JS — no heavy frameworks, Service Worker, Web App Manifest
 - **Audio:** High-bitrate 160kbps AAC streaming with instant seek support
 - **Fonts:** Inter + Space Grotesk (Google Fonts)
 

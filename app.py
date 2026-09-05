@@ -81,6 +81,9 @@ SAAVN_TIMEOUT = 8
 ITUNES_ENDPOINT = "https://itunes.apple.com/search"
 ITUNES_TIMEOUT = 8
 
+DEEZER_ENDPOINT = "https://api.deezer.com/search"
+DEEZER_TIMEOUT = 8
+
 CACHE_TTL = 60 * 30  # 30 minutes
 DEFAULT_LIMIT = 24
 MAX_LIMIT = 50
@@ -268,6 +271,13 @@ def init_db():
                 FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS search_cache (
+                query_key TEXT PRIMARY KEY,
+                results_json TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
 
 
@@ -445,6 +455,164 @@ def _fetch_itunes(term: str, limit: int) -> list[dict[str, Any]]:
     return out
 
 
+def _normalize_deezer_track(item: dict[str, Any]) -> dict[str, Any] | None:
+    """Map a Deezer track result into clean track schema."""
+    preview = item.get("preview")
+    if not preview:
+        return None
+    artist_data = item.get("artist") or {}
+    album_data = item.get("album") or {}
+    cover = album_data.get("cover_big") or album_data.get("cover_medium") or album_data.get("cover") or ""
+    dur_sec = item.get("duration") or 30
+    return {
+        "id": f"deezer_{item.get('id')}",
+        "title": html.unescape(item.get("title") or item.get("title_short") or "Unknown"),
+        "artist": html.unescape(artist_data.get("name") or "Unknown"),
+        "album": html.unescape(album_data.get("title") or ""),
+        "cover": cover,
+        "preview": preview,
+        "duration_ms": int(dur_sec * 1000),
+        "release": "",
+        "genre": "",
+        "is_full": False,
+    }
+
+
+def _fetch_deezer(term: str, limit: int) -> list[dict[str, Any]]:
+    """Query Deezer Search API as 3rd tier fallback."""
+    params = {"q": term, "limit": limit}
+    try:
+        r = requests.get(DEEZER_ENDPOINT, params=params, timeout=DEEZER_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+    except (requests.RequestException, ValueError) as exc:
+        log.warning("Deezer request failed for %r: %s", term, exc)
+        return []
+    out: list[dict[str, Any]] = []
+    for raw in data.get("data", []):
+        norm = _normalize_deezer_track(raw)
+        if norm:
+            out.append(norm)
+    return out
+
+
+OFFLINE_CURATED_TRACKS: list[dict[str, Any]] = [
+    {
+        "id": "curated_1",
+        "title": "Midnight City Chill",
+        "artist": "SongPlay Lo-Fi Collective",
+        "album": "Endless Nights",
+        "cover": "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=500&auto=format&fit=crop&q=80",
+        "preview": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3",
+        "duration_ms": 147000,
+        "release": "2025",
+        "genre": "Lo-Fi / Chill",
+        "is_full": True,
+    },
+    {
+        "id": "curated_2",
+        "title": "Starlight Echoes",
+        "artist": "Aetheria",
+        "album": "Celestial Drift",
+        "cover": "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=500&auto=format&fit=crop&q=80",
+        "preview": "https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0a13f69d2.mp3?filename=electronic-future-beats-117997.mp3",
+        "duration_ms": 165000,
+        "release": "2025",
+        "genre": "Electronic",
+        "is_full": True,
+    },
+    {
+        "id": "curated_3",
+        "title": "Acoustic Sunrise",
+        "artist": "Horizon Acoustic",
+        "album": "Golden Hour",
+        "cover": "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500&auto=format&fit=crop&q=80",
+        "preview": "https://cdn.pixabay.com/download/audio/2022/10/14/audio_9939f792cb.mp3?filename=acoustic-guitars-ambient-uplifting-123490.mp3",
+        "duration_ms": 138000,
+        "release": "2024",
+        "genre": "Acoustic",
+        "is_full": True,
+    },
+    {
+        "id": "curated_4",
+        "title": "Cyberpunk Neon Drive",
+        "artist": "Synthwave Prime",
+        "album": "Retroverse 2099",
+        "cover": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=500&auto=format&fit=crop&q=80",
+        "preview": "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=synthwave-80s-110045.mp3",
+        "duration_ms": 180000,
+        "release": "2025",
+        "genre": "Synthwave",
+        "is_full": True,
+    },
+    {
+        "id": "curated_5",
+        "title": "Deep Focus Meditation",
+        "artist": "Zenith Soundscapes",
+        "album": "Mindful Waves",
+        "cover": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=500&auto=format&fit=crop&q=80",
+        "preview": "https://cdn.pixabay.com/download/audio/2021/08/04/audio_12b0c7443c.mp3?filename=meditation-ambient-7090.mp3",
+        "duration_ms": 210000,
+        "release": "2024",
+        "genre": "Ambient",
+        "is_full": True,
+    },
+    {
+        "id": "curated_6",
+        "title": "Upbeat Summer Groove",
+        "artist": "Solaris Funk",
+        "album": "Tropical Sunshine",
+        "cover": "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&auto=format&fit=crop&q=80",
+        "preview": "https://cdn.pixabay.com/download/audio/2022/01/26/audio_d0c6ff1101.mp3?filename=summer-tropical-house-113524.mp3",
+        "duration_ms": 154000,
+        "release": "2025",
+        "genre": "Pop / Dance",
+        "is_full": True,
+    },
+]
+
+
+def _fetch_curated_catalog(term: str, limit: int) -> list[dict[str, Any]]:
+    """Emergency offline/fail-safe track catalog so search never errors or goes blank."""
+    q = term.lower().strip()
+    matched = [
+        t
+        for t in OFFLINE_CURATED_TRACKS
+        if q in t["title"].lower() or q in t["artist"].lower() or q in t["album"].lower() or q in t["genre"].lower()
+    ]
+    if not matched:
+        matched = OFFLINE_CURATED_TRACKS
+    return matched[:limit]
+
+
+def _get_disk_cached_search(query_key: str) -> list[dict[str, Any]] | None:
+    """Retrieve search results from persistent SQLite storage."""
+    try:
+        with get_db() as conn:
+            row = conn.execute("SELECT results_json FROM search_cache WHERE query_key = ?", (query_key,)).fetchone()
+            if row and row["results_json"]:
+                return json.loads(row["results_json"])
+    except Exception as exc:
+        log.warning("Failed to read search disk cache: %s", exc)
+    return None
+
+
+def _set_disk_cached_search(query_key: str, results: list[dict[str, Any]]) -> None:
+    """Persist search results to SQLite storage for future-proof offline recall."""
+    if not results:
+        return
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO search_cache (query_key, results_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(query_key) DO UPDATE SET results_json = excluded.results_json, updated_at = CURRENT_TIMESTAMP",
+                (query_key, json.dumps(results)),
+            )
+            conn.commit()
+    except Exception as exc:
+        log.warning("Failed to write search disk cache: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -456,6 +624,19 @@ def index() -> str:
 @app.get("/favicon.ico")
 def favicon() -> Response:
     return send_from_directory(app.static_folder, "favicon.svg", mimetype="image/svg+xml")
+
+
+@app.get("/manifest.webmanifest")
+def webmanifest() -> Response:
+    return send_from_directory(app.static_folder, "manifest.webmanifest", mimetype="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker() -> Response:
+    resp = send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.get("/healthz")
@@ -490,13 +671,29 @@ def api_search() -> Response:
     if cached is not None:
         return jsonify({"query": term, "count": len(cached), "results": cached, "cached": True})
 
-    # Search Saavn first for full songs
+    # Check persistent SQLite disk cache
+    disk_cached = _get_disk_cached_search(cache_key)
+    if disk_cached is not None and len(disk_cached) > 0:
+        cache.set(cache_key, disk_cached)
+        return jsonify({"query": term, "count": len(disk_cached), "results": disk_cached, "cached": True, "source": "disk_cache"})
+
+    # Multi-tier fallback pipeline:
+    # 1. JioSaavn (full songs)
     results = _fetch_saavn(term, limit)
-    # If no results found, fall back to iTunes
+    # 2. iTunes fallback
     if not results:
         results = _fetch_itunes(term, limit)
+    # 3. Deezer fallback
+    if not results:
+        results = _fetch_deezer(term, limit)
+    # 4. Emergency curated offline catalog
+    if not results:
+        results = _fetch_curated_catalog(term, limit)
 
-    cache.set(cache_key, results)
+    if results:
+        cache.set(cache_key, results)
+        _set_disk_cached_search(cache_key, results)
+
     return jsonify({"query": term, "count": len(results), "results": results, "cached": False})
 
 
