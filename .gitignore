@@ -38,12 +38,3 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 .secret_key
-
-# Android build artifacts
-android/bin/
-android/*.zip
-android/*.apk
-android/*.keystore
-android/**/R.java
-*.idsig
-!songplay.apk

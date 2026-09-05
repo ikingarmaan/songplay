@@ -19,32 +19,16 @@ A single-page music player with a polished glassmorphism + neon theme. Search an
 - 🎭 **12 mood presets** — Chill, Romantic, Workout, Party, Bollywood, Punjabi, Hip Hop, EDM, Focus, Sleep, Rock, Trending
 - ⌨️ **Keyboard shortcuts** — `Space` play/pause, `←/→` prev/next, `M` mute, `Q` queue, `Esc` close
 - 🌗 **Light + dark themes** (auto-saved)
-- 📱 **Native Android App (`songplay.apk`)** — standalone, hardware-accelerated Android APK with lock-screen media controls, background playback, and offline catalog
+- 📱 Fully responsive across desktop, tablet, and mobile browsers
 - 🌐 **PWA & Offline Ready** — installable on Android, iOS, Windows, and macOS with Service Worker caching
 - 🔒 **Future-Proof Multi-Tier Search** — 4-tier fallback engine (JioSaavn ➔ iTunes ➔ Deezer ➔ Curated offline catalog) with persistent SQLite disk caching
 - 🎛️ **MediaSession API Integration** — full lock-screen, Bluetooth headset, and notification shade media controls
 - 🎨 **Pro UI/UX** — skeleton loaders, toast feedback, smooth transitions, animated vinyl, equalizer, lyrics, sleep timer
 
-## 📱 Android App (`songplay.apk`)
-
-A dedicated standalone native Android app is provided in the repository root:
-- **File:** `songplay.apk`
-- **Package:** `com.songplay.app`
-- **Supported Android Versions:** Android 5.0 (Lollipop) up to Android 15/16 (API 21 – 36)
-- **Features:** Hardware-accelerated WebView, native DES stream decryption, lock screen media session controls, custom fullscreen video/canvas, back button handling, and offline fallback catalog.
-
-To build the APK from source at any time:
-```bash
-./build_apk.sh
-```
-
 ## 🏗️ Architecture
 
 ```
 songplay/
-├── songplay.apk          # Standalone release-signed Android APK
-├── build_apk.sh          # One-command automated Android build script
-├── android/              # Native Android application source & resources
 ├── app.py                # Flask web service, multi-tier search & stream decryptor
 ├── requirements.txt      # Python deps (Flask, pycryptodome, requests, etc.)
 ├── render.yaml           # Render deployment
@@ -69,7 +53,6 @@ The multi-tier music engine:
 
 ## 🛠️ Tech
 
-- **Android App:** Native Java + Android SDK, D8, AAPT2, Hardware Accelerated WebView
 - **Backend:** Flask 3, gunicorn, requests, flask-caching, pycryptodome / cryptography, SQLite3
 - **Frontend:** Vanilla HTML/CSS/JS — no heavy frameworks, Service Worker, Web App Manifest
 - **Audio:** High-bitrate 160kbps AAC streaming with instant seek support
