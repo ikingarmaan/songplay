@@ -1083,6 +1083,105 @@ img { display: block; max-width: 100%; }
   color: var(--text-soft); padding: 24px 16px;
 }
 
+/* Side-by-Side Lyrics + Album Art View */
+.fullscreen-player.view-lyrics .fs-container {
+  max-width: 1080px;
+}
+
+.fullscreen-player.view-lyrics .fs-stage {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 42px;
+  min-height: 400px;
+}
+
+.fullscreen-player.view-lyrics .fs-art-wrapper {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: min(40vw, 320px);
+  animation: fadeIn 0.3s var(--ease);
+}
+
+.fullscreen-player.view-lyrics .fs-art {
+  width: min(34vw, 290px);
+  aspect-ratio: 1;
+  border-radius: 24px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border-hi);
+}
+
+.fs-side-meta {
+  display: none;
+}
+
+.fullscreen-player.view-lyrics .fs-side-meta {
+  display: block;
+  margin-top: 18px;
+  text-align: center;
+  width: 100%;
+  max-width: 290px;
+}
+
+.fs-side-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fs-side-artist {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fullscreen-player.view-lyrics .fs-meta {
+  display: none;
+}
+
+.fullscreen-player.view-lyrics .fs-lyrics-wrapper {
+  display: flex !important;
+  flex: 1 1 500px;
+  max-width: 600px;
+  height: clamp(340px, 52vh, 500px);
+  text-align: left;
+}
+
+.fullscreen-player.view-lyrics .fs-lyrics-scroller {
+  text-align: left;
+  padding: 120px 20px 160px;
+}
+
+/* Track preview badge */
+.badge-preview {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(10, 8, 20, 0.85);
+  backdrop-filter: blur(8px);
+  color: #ffb35c;
+  border: 1px solid rgba(255, 179, 92, 0.4);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
 .fs-meta {
   margin-bottom: 24px;
 }
@@ -1690,6 +1789,26 @@ kbd {
   .fs-art {
     width: min(66vw, 250px);
     border-radius: 20px;
+  }
+  .fullscreen-player.view-lyrics .fs-stage {
+    gap: 16px;
+    min-height: auto;
+  }
+  .fullscreen-player.view-lyrics .fs-art-wrapper {
+    width: min(32vw, 170px);
+  }
+  .fullscreen-player.view-lyrics .fs-art {
+    width: min(30vw, 150px);
+    border-radius: 16px;
+  }
+  .fullscreen-player.view-lyrics .fs-side-title {
+    font-size: 15px;
+  }
+  .fullscreen-player.view-lyrics .fs-side-artist {
+    font-size: 11px;
+  }
+  .fullscreen-player.view-lyrics .fs-lyrics-wrapper {
+    height: clamp(220px, 40vh, 340px);
   }
   .fs-lyrics-wrapper {
     height: clamp(220px, 38vh, 320px);

@@ -52,6 +52,7 @@ const els = {
   sleepTimerBtn: $('sleepTimerBtn'),
   sleepBadge: $('sleepBadge'),
   shareBtn: $('shareBtn'),
+  lyricsBtn: $('lyricsBtn'),
   shortcutsBtn: $('shortcutsBtn'),
   recentlyPlayed: $('recentlyPlayed'),
   recentList: $('recentList'),
@@ -84,6 +85,8 @@ const fsEls = {
   lyricsScroller: $('fsLyricsScroller'),
   title: $('fsTitle'),
   artist: $('fsArtist'),
+  sideTitle: $('fsSideTitle'),
+  sideArtist: $('fsSideArtist'),
   curTime: $('fsCurTime'),
   durTime: $('fsDurTime'),
   progress: $('fsProgress'),
@@ -265,6 +268,7 @@ function renderResults(tracks) {
     card.innerHTML = `
       <div class="art">
         <img loading="lazy" alt="" src="${esc(t.cover)}" onerror="this.style.display='none'">
+        ${!t.is_full ? '<span class="badge-preview">Preview (30s)</span>' : ''}
         <div class="play-overlay"><div class="pp">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </div></div>
@@ -398,6 +402,29 @@ function playCurrent() {
   });
   updatePlayerUI();
   updateMediaSession(t);
+
+  // Auto-upgrade 30s preview tracks to full songs from JioSaavn if available
+  if (!t.is_full && !t._resolved) {
+    t._resolved = true;
+    fetch(`${API}/resolve?title=${encodeURIComponent(t.title)}&artist=${encodeURIComponent(t.artist)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.resolved && data.track && data.track.preview) {
+          const curPos = audio.currentTime;
+          t.preview = data.track.preview;
+          t.duration_ms = data.track.duration_ms;
+          t.is_full = true;
+          if (t.duration_ms) els.durTime.textContent = fmt(t.duration_ms / 1000);
+          audio.src = t.preview;
+          audio.currentTime = curPos;
+          audio.play().catch(() => {});
+          updatePlayerUI();
+          showToast(`✨ Upgraded to full high-quality song!`);
+        }
+      })
+      .catch(() => {});
+  }
+
   if (typeof addToRecentlyPlayed === 'function') addToRecentlyPlayed(t);
   if (typeof fetchLyricsForTrack === 'function') fetchLyricsForTrack(t);
   if (typeof extractColorsFromCover === 'function') extractColorsFromCover(t.cover);
@@ -717,6 +744,19 @@ window.addEventListener('keydown', (e) => {
   }
   else if (e.key === 'r' || e.key === 'R') {
     if (typeof startRadioForTrack === 'function') startRadioForTrack();
+  }
+  else if (e.key === 'l' || e.key === 'L') {
+    if (fsEls.container && !fsEls.container.hidden) {
+      setFsView(state.lyrics.activeView === 'lyrics' ? 'art' : 'lyrics');
+    } else {
+      if (!state.queue.length && state.tracks.length) {
+        state.queue = state.tracks.slice();
+        state.currentIdx = 0;
+        playCurrent();
+      }
+      openFullscreenPlayer();
+      setFsView('lyrics');
+    }
   }
   else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
     if (shortcutEls.modal) shortcutEls.modal.hidden = !shortcutEls.modal.hidden;
@@ -2024,12 +2064,20 @@ function renderSyncedLyrics(lines) {
 function setFsView(view) {
   state.lyrics.activeView = view;
   const isArt = view === 'art';
+  fsEls.container?.classList.toggle('view-lyrics', !isArt);
   fsEls.viewArtBtn?.classList.toggle('active', isArt);
   fsEls.viewArtBtn?.setAttribute('aria-selected', String(isArt));
   fsEls.viewLyricsBtn?.classList.toggle('active', !isArt);
   fsEls.viewLyricsBtn?.setAttribute('aria-selected', String(!isArt));
-  if (fsEls.artWrapper) fsEls.artWrapper.hidden = !isArt;
-  if (fsEls.lyricsWrapper) fsEls.lyricsWrapper.hidden = isArt;
+
+  if (isArt) {
+    if (fsEls.artWrapper) fsEls.artWrapper.hidden = false;
+    if (fsEls.lyricsWrapper) fsEls.lyricsWrapper.hidden = true;
+  } else {
+    // Side-by-side mode: BOTH album art and lyrics visible side by side!
+    if (fsEls.artWrapper) fsEls.artWrapper.hidden = false;
+    if (fsEls.lyricsWrapper) fsEls.lyricsWrapper.hidden = false;
+  }
 
   if (!isArt && state.lyrics.currentLineIdx >= 0) {
     const activeEl = fsEls.lyricsScroller?.querySelector('.fs-lyric-line.active');
@@ -2071,6 +2119,8 @@ function updateFullscreenUI() {
   if (t) {
     fsEls.title.textContent = t.title;
     fsEls.artist.textContent = t.artist + (t.album ? ` · ${t.album}` : '');
+    if (fsEls.sideTitle) fsEls.sideTitle.textContent = t.title;
+    if (fsEls.sideArtist) fsEls.sideArtist.textContent = t.artist + (t.album ? ` · ${t.album}` : '');
     if (t.cover) {
       fsEls.coverImg.src = t.cover;
       fsEls.coverImg.style.display = 'block';
@@ -2086,6 +2136,8 @@ function updateFullscreenUI() {
   } else {
     fsEls.title.textContent = 'Nothing playing';
     fsEls.artist.textContent = 'Search a song to begin';
+    if (fsEls.sideTitle) fsEls.sideTitle.textContent = 'Nothing playing';
+    if (fsEls.sideArtist) fsEls.sideArtist.textContent = 'Search a song to begin';
     fsEls.coverImg.style.display = 'none';
     fsEls.fallback.style.display = 'block';
     fsEls.backdrop.style.backgroundImage = 'none';
@@ -2191,6 +2243,15 @@ fsEls.loopBtn?.addEventListener('click', () => els.loopBtn.click());
 
 /* Fullscreen triggers & buttons */
 els.fullscreenBtn?.addEventListener('click', openFullscreenPlayer);
+els.lyricsBtn?.addEventListener('click', () => {
+  if (!state.queue.length && state.tracks.length) {
+    state.queue = state.tracks.slice();
+    state.currentIdx = 0;
+    playCurrent();
+  }
+  openFullscreenPlayer();
+  setFsView('lyrics');
+});
 els.cover?.addEventListener('click', openFullscreenPlayer);
 fsEls.closeBtn?.addEventListener('click', closeFullscreenPlayer);
 fsEls.queueBtn?.addEventListener('click', () => {

@@ -697,6 +697,39 @@ def api_search() -> Response:
     return jsonify({"query": term, "count": len(results), "results": results, "cached": False})
 
 
+@app.get("/api/resolve")
+def api_resolve() -> Response:
+    """Attempt to resolve a 30s preview song to a full high-bitrate stream from JioSaavn."""
+    title = (request.args.get("title") or "").strip()
+    artist = (request.args.get("artist") or "").strip()
+    if not title:
+        return jsonify({"resolved": False, "error": "missing title"}), 400
+
+    clean_t = _clean_song_title(title)
+    clean_a = _clean_artist_name(artist)
+
+    cache_key = f"resolve:{quote_plus(clean_t.lower())}:{quote_plus(clean_a.lower())}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    # 1. Try clean title + clean artist
+    candidates = _fetch_saavn(f"{clean_t} {clean_a}", limit=4)
+    # 2. If no candidate, try clean title alone
+    if not candidates:
+        candidates = _fetch_saavn(clean_t, limit=4)
+
+    for c in candidates:
+        if c.get("is_full") and c.get("preview"):
+            resp_data = {"resolved": True, "track": c}
+            cache.set(cache_key, resp_data)
+            return jsonify(resp_data)
+
+    resp_data = {"resolved": False, "track": None}
+    cache.set(cache_key, resp_data)
+    return jsonify(resp_data)
+
+
 @app.get("/api/suggest")
 def api_suggest() -> Response:
     """Returns curated mood/genre packs for the front-end."""
