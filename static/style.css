@@ -1138,6 +1138,357 @@ img { display: block; max-width: 100%; }
   .topnav { display: none; }
 }
 
+/* ============================================================
+   Recently Played Carousel (Spotify / Apple Music Shelf)
+   ============================================================ */
+.recent-scroll-grid {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 4px 4px 14px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.recent-scroll-grid::-webkit-scrollbar {
+  height: 6px;
+}
+.recent-scroll-grid::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 99px;
+}
+.recent-scroll-grid::-webkit-scrollbar-thumb {
+  background: var(--surface-hi);
+  border-radius: 99px;
+}
+.recent-card {
+  flex: 0 0 160px;
+  scroll-snap-align: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.25s var(--ease);
+}
+.recent-card:hover {
+  background: var(--surface-hi);
+  border-color: var(--border-hi);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+.recent-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  background: var(--surface-hi);
+}
+.recent-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.recent-card .name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.recent-card .sub {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.recent-card .time-ago {
+  font-size: 10px;
+  color: var(--accent);
+  margin-top: 4px;
+}
+
+/* Sleep timer badge & controls */
+.ctrl {
+  position: relative;
+}
+.ctrl-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--grad);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 99px;
+  line-height: 1.2;
+}
+
+/* Queue Autoplay Toggle */
+.queue-actions {
+  display: flex;
+  align-items: center;
+}
+.queue-autoplay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.autoplay-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.autoplay-sub {
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* Toggle Switch (Apple / Spotify style) */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: var(--surface-hi);
+  border: 1px solid var(--border-hi);
+  transition: .3s;
+  border-radius: 99px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--grad);
+  border-color: transparent;
+}
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(16px);
+}
+
+/* Equalizer & Sound FX */
+.modal-head-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.modal-head-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.eq-section {
+  margin-bottom: 16px;
+}
+.eq-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.eq-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.eq-chip, .speed-chip {
+  padding: 6px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+.eq-chip:hover, .speed-chip:hover {
+  background: var(--surface-hi);
+  border-color: var(--border-hi);
+}
+.eq-chip.active, .speed-chip.active {
+  background: var(--grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(160, 107, 255, 0.35);
+}
+
+.eq-spatial-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.spatial-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.spatial-sub {
+  font-size: 11px;
+}
+
+.eq-sliders {
+  display: flex;
+  justify-content: space-around;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 12px;
+  gap: 16px;
+}
+.eq-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+.eq-slider-val {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.eq-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--surface-hi);
+  outline: none;
+}
+.eq-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease;
+}
+.eq-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.eq-col-label {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.eq-speed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Sleep Timer Modal */
+.sleep-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sleep-btn {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+.sleep-btn:hover {
+  background: var(--surface-hi);
+  border-color: var(--border-hi);
+}
+.sleep-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sleep-btn.sleep-off {
+  border-color: rgba(255, 95, 126, 0.3);
+  color: #ff5f7e;
+}
+.sleep-btn.sleep-off:hover {
+  background: rgba(255, 95, 126, 0.12);
+}
+
+/* Keyboard Shortcuts Cheat Sheet */
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 16px;
+}
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface-hi);
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
 /* Tablets & Mobile Devices (<= 768px) */
 @media (max-width: 768px) {
   /* Prevent horizontal side-scrolling on mobile */
@@ -1452,6 +1803,34 @@ img { display: block; max-width: 100%; }
   .auth-gate-card .gate-btns {
     flex-direction: column;
     gap: 8px;
+  }
+
+  /* Recently Played Shelf on Mobile */
+  .recent-card {
+    flex: 0 0 135px;
+    padding: 10px;
+  }
+  .recent-card .name {
+    font-size: 12px;
+  }
+
+  /* Shortcuts Sheet on Mobile */
+  .shortcuts-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  /* EQ modal adjustments on Mobile */
+  .eq-sliders {
+    gap: 10px;
+    padding: 14px 8px;
+  }
+  .eq-presets {
+    gap: 6px;
+  }
+  .eq-chip, .speed-chip {
+    padding: 5px 10px;
+    font-size: 11px;
   }
 }
 

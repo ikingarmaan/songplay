@@ -679,6 +679,81 @@ def api_lyrics() -> Response:
     return jsonify(result)
 
 
+@app.get("/api/radio")
+def api_radio() -> Response:
+    """Generate an infinite radio mix based on seed song artist and title."""
+    ip = get_client_ip()
+    allowed, retry_after = rate_limiter.is_allowed(f"radio:{ip}", max_requests=60, window_seconds=60)
+    if not allowed:
+        resp = jsonify({"error": "Radio rate limit exceeded. Please wait a moment."})
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
+
+    title = (request.args.get("title") or "").strip()[:120]
+    artist = (request.args.get("artist") or "").strip()[:120]
+    genre = (request.args.get("genre") or "").strip()[:60]
+    track_id = (request.args.get("track_id") or "").strip()[:100]
+
+    title = re.sub(r"[\x00-\x1f\x7f]", "", title)
+    artist = re.sub(r"[\x00-\x1f\x7f]", "", artist)
+    genre = re.sub(r"[\x00-\x1f\x7f]", "", genre)
+
+    if not artist and not title:
+        return jsonify({"error": "Seed artist or title required"}), 400
+
+    clean_artist = _clean_artist_name(artist) if artist else ""
+    clean_title = _clean_song_title(title) if title else ""
+
+    cache_key = f"radio:{quote_plus(clean_artist.lower())}:{quote_plus(clean_title.lower())}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return jsonify({"seed": {"title": title, "artist": artist}, "results": cached, "count": len(cached), "cached": True})
+
+    candidates: list[dict[str, Any]] = []
+
+    # 1. Fetch artist hits if artist is provided
+    if clean_artist:
+        artist_results = _fetch_saavn(f"{clean_artist} hits", limit=12)
+        if not artist_results:
+            artist_results = _fetch_saavn(clean_artist, limit=12)
+        candidates.extend(artist_results)
+
+    # 2. If candidates < 6 and genre is present, fetch genre vibe
+    if len(candidates) < 6 and genre:
+        genre_results = _fetch_saavn(f"{genre} hits", limit=10)
+        candidates.extend(genre_results)
+
+    # 3. Fallback to general search if still low
+    if len(candidates) < 4 and clean_title:
+        title_results = _fetch_saavn(f"similar to {clean_title}", limit=8)
+        if not title_results:
+            title_results = _fetch_itunes(clean_artist or clean_title, limit=10)
+        candidates.extend(title_results)
+
+    # Filter out seed track and deduplicate
+    seen_keys: set[str] = set()
+    filtered: list[dict[str, Any]] = []
+    seed_title_lower = clean_title.lower()
+
+    for t in candidates:
+        tid = str(t.get("id") or "")
+        t_title = (t.get("title") or "").strip().lower()
+        t_artist = (t.get("artist") or "").strip().lower()
+        key = f"{t_title}::{t_artist}"
+
+        if tid == track_id or (seed_title_lower and seed_title_lower in t_title):
+            continue
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        filtered.append(t)
+        if len(filtered) >= 15:
+            break
+
+    cache.set(cache_key, filtered, timeout=3600)
+    return jsonify({"seed": {"title": title, "artist": artist}, "results": filtered, "count": len(filtered), "cached": False})
+
+
 # ---------------------------------------------------------------------------
 # Auth Helpers & Endpoints
 # ---------------------------------------------------------------------------

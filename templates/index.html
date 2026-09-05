@@ -48,6 +48,10 @@
     <div class="topbar-right">
       <span class="dev-badge hide-mobile">Developed by <strong>Mohd Armaan</strong></span>
       
+      <button class="icon-btn hide-mobile" id="shortcutsBtn" title="Keyboard Shortcuts (?)" aria-label="Keyboard Shortcuts" style="font-size:12px;font-weight:700;width:30px;height:30px;">
+        <kbd>?</kbd>
+      </button>
+
       <!-- User / Auth Controls -->
       <div id="authActions">
         <button class="btn btn-sm btn-outline" id="openAuthBtn">Sign In</button>
@@ -118,6 +122,20 @@
           <span></span><span></span><span></span><span></span><span></span>
         </div>
       </aside>
+    </section>
+
+    <!-- ─────────────  RECENTLY PLAYED  ───────────── -->
+    <section class="section" id="recentlyPlayed" aria-labelledby="recentTitle" hidden>
+      <header class="section-head">
+        <div>
+          <h2 id="recentTitle">Recently played</h2>
+          <p class="muted">Jump right back into your listening history.</p>
+        </div>
+        <div class="result-meta">
+          <button class="link-btn" id="clearRecentBtn">Clear</button>
+        </div>
+      </header>
+      <div id="recentList" class="recent-scroll-grid" aria-live="polite"></div>
     </section>
 
     <!-- ─────────────  RESULTS  ───────────── -->
@@ -240,6 +258,19 @@
     </div>
 
     <div class="player-right">
+      <button class="ctrl" id="radioBtn" title="Start Station / Radio (R)" aria-label="Start Radio">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a10 10 0 0 0-7.07 17.07l1.41-1.41A8 8 0 1 1 12 20v2a10 10 0 0 0 0-20zm0 4a6 6 0 0 0-4.24 10.24l1.41-1.41A4 4 0 1 1 12 16v2a6 6 0 0 0 0-12zm0 4a2 2 0 1 0 2 2 2 2 0 0 0-2-2z"/></svg>
+      </button>
+      <button class="ctrl hide-mobile" id="eqBtn" title="Equalizer & Speed (E)" aria-label="Audio Equalizer">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>
+      </button>
+      <button class="ctrl hide-mobile" id="sleepTimerBtn" title="Sleep Timer (S)" aria-label="Sleep Timer">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
+        <span class="ctrl-badge" id="sleepBadge" hidden></span>
+      </button>
+      <button class="ctrl hide-mobile" id="shareBtn" title="Share Track" aria-label="Share Track">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+      </button>
       <button class="ctrl" id="muteBtn" title="Mute" aria-label="Mute">
         <svg id="volIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12z"/></svg>
       </button>
@@ -259,10 +290,25 @@
   <aside class="queue" id="queue" aria-label="Up next" hidden>
     <header class="queue-head">
       <h3>Up next</h3>
-      <button class="icon-btn" id="closeQueue" aria-label="Close queue">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
-      </button>
+      <div class="queue-actions">
+        <button class="link-btn" id="clearQueueBtn" style="font-size:12px; margin-right: 6px;">Clear</button>
+        <button class="icon-btn" id="closeQueue" aria-label="Close queue">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+        </button>
+      </div>
     </header>
+
+    <div class="queue-autoplay-row">
+      <div class="autoplay-info">
+        <span class="autoplay-title">Autoplay similar tracks</span>
+        <span class="autoplay-sub muted">Keep streaming when queue ends</span>
+      </div>
+      <label class="toggle-switch" title="Autoplay similar songs">
+        <input type="checkbox" id="autoplayToggle" checked />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
     <div id="queueList" class="queue-list"></div>
     <p class="queue-hint muted">Tip: tap the <strong>+</strong> on any card to add it here.</p>
   </aside>
@@ -365,6 +411,136 @@
     </div>
   </div>
 
+  <!-- Equalizer & Sound FX Modal -->
+  <div class="modal-backdrop" id="eqModal" hidden>
+    <div class="modal-card modal-md" role="dialog" aria-modal="true" aria-labelledby="eqModalTitle">
+      <button class="modal-close" id="closeEqModal" aria-label="Close modal">&times;</button>
+      <div class="modal-head-row">
+        <div class="modal-head-icon">🎛️</div>
+        <div>
+          <h3 id="eqModalTitle">Audio Equalizer &amp; Sound FX</h3>
+          <p class="muted">Acoustic presets, spatial audio &amp; playback speed</p>
+        </div>
+      </div>
+
+      <!-- Presets -->
+      <div class="eq-section">
+        <label class="eq-label">Acoustic Presets</label>
+        <div class="eq-presets" id="eqPresets">
+          <button class="eq-chip active" data-preset="flat">Flat / Pure</button>
+          <button class="eq-chip" data-preset="bass">Bass Booster 🔥</button>
+          <button class="eq-chip" data-preset="vocal">Vocal Booster ✨</button>
+          <button class="eq-chip" data-preset="electronic">Electronic ⚡</button>
+          <button class="eq-chip" data-preset="rock">Rock / Live 🎸</button>
+          <button class="eq-chip" data-preset="acoustic">Acoustic 🎻</button>
+        </div>
+      </div>
+
+      <!-- Spatial Audio Toggle -->
+      <div class="eq-spatial-card">
+        <div class="spatial-info">
+          <span class="spatial-title">Spatial Audio &amp; Concert Hall</span>
+          <span class="spatial-sub muted">Simulate wide immersive 3D acoustics</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="spatialAudioToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- 3-Band Equalizer -->
+      <div class="eq-section">
+        <label class="eq-label">Frequency Sliders</label>
+        <div class="eq-sliders">
+          <div class="eq-col">
+            <span class="eq-slider-val" id="eqBassVal">0 dB</span>
+            <input type="range" class="eq-range" id="eqBass" min="-12" max="12" step="1" value="0" />
+            <span class="eq-col-label">Bass<br><small class="muted">100Hz</small></span>
+          </div>
+          <div class="eq-col">
+            <span class="eq-slider-val" id="eqMidVal">0 dB</span>
+            <input type="range" class="eq-range" id="eqMid" min="-12" max="12" step="1" value="0" />
+            <span class="eq-col-label">Mid<br><small class="muted">1kHz</small></span>
+          </div>
+          <div class="eq-col">
+            <span class="eq-slider-val" id="eqTrebleVal">0 dB</span>
+            <input type="range" class="eq-range" id="eqTreble" min="-12" max="12" step="1" value="0" />
+            <span class="eq-col-label">Treble<br><small class="muted">3kHz</small></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Playback Speed -->
+      <div class="eq-section">
+        <label class="eq-label">Playback Speed</label>
+        <div class="eq-speed-chips" id="eqSpeedChips">
+          <button class="speed-chip" data-speed="0.8">0.8x Slowed</button>
+          <button class="speed-chip active" data-speed="1.0">1.0x Normal</button>
+          <button class="speed-chip" data-speed="1.15">1.15x</button>
+          <button class="speed-chip" data-speed="1.25">1.25x Sped Up</button>
+        </div>
+      </div>
+
+      <div class="modal-btns" style="margin-top: 20px;">
+        <button type="button" class="btn btn-outline btn-sm" id="resetEqBtn">Reset to Default</button>
+        <button type="button" class="btn btn-primary btn-sm" id="doneEqBtn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sleep Timer Modal -->
+  <div class="modal-backdrop" id="sleepTimerModal" hidden>
+    <div class="modal-card modal-sm" role="dialog" aria-modal="true" aria-labelledby="sleepModalTitle">
+      <button class="modal-close" id="closeSleepModal" aria-label="Close modal">&times;</button>
+      <div class="modal-head-row">
+        <div class="modal-head-icon">🌙</div>
+        <div>
+          <h3 id="sleepModalTitle">Sleep Timer</h3>
+          <p class="muted" id="sleepModalStatus">Stops music gently so you can rest</p>
+        </div>
+      </div>
+      <div class="sleep-options" id="sleepOptions">
+        <button class="sleep-btn" data-time="5">5 minutes</button>
+        <button class="sleep-btn" data-time="15">15 minutes</button>
+        <button class="sleep-btn" data-time="30">30 minutes</button>
+        <button class="sleep-btn" data-time="45">45 minutes</button>
+        <button class="sleep-btn" data-time="60">1 hour</button>
+        <button class="sleep-btn" data-time="end">End of current track</button>
+        <button class="sleep-btn sleep-off" data-time="0" id="sleepOffBtn" hidden>Turn Off Timer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Modal -->
+  <div class="modal-backdrop" id="shortcutsModal" hidden>
+    <div class="modal-card modal-md" role="dialog" aria-modal="true" aria-labelledby="shortcutsModalTitle">
+      <button class="modal-close" id="closeShortcutsModal" aria-label="Close modal">&times;</button>
+      <div class="modal-head-row">
+        <div class="modal-head-icon">⌨️</div>
+        <div>
+          <h3 id="shortcutsModalTitle">Keyboard Shortcuts</h3>
+          <p class="muted">Speed through SongPlay with pro hotkeys</p>
+        </div>
+      </div>
+      <div class="shortcuts-grid">
+        <div class="shortcut-item"><span>Play / Pause</span> <kbd>Space</kbd></div>
+        <div class="shortcut-item"><span>Next Track</span> <kbd>→</kbd></div>
+        <div class="shortcut-item"><span>Previous Track</span> <kbd>←</kbd></div>
+        <div class="shortcut-item"><span>Seek Forward 5s</span> <kbd>Shift</kbd> + <kbd>→</kbd></div>
+        <div class="shortcut-item"><span>Seek Backward 5s</span> <kbd>Shift</kbd> + <kbd>←</kbd></div>
+        <div class="shortcut-item"><span>Mute / Unmute</span> <kbd>M</kbd></div>
+        <div class="shortcut-item"><span>Fullscreen Player</span> <kbd>F</kbd></div>
+        <div class="shortcut-item"><span>Toggle Lyrics</span> <kbd>L</kbd></div>
+        <div class="shortcut-item"><span>Up Next Queue</span> <kbd>Q</kbd></div>
+        <div class="shortcut-item"><span>Equalizer &amp; Speed</span> <kbd>E</kbd></div>
+        <div class="shortcut-item"><span>Sleep Timer</span> <kbd>S</kbd></div>
+        <div class="shortcut-item"><span>Start Station / Radio</span> <kbd>R</kbd></div>
+        <div class="shortcut-item"><span>Close Modals / Overlays</span> <kbd>Esc</kbd></div>
+        <div class="shortcut-item"><span>Show This Sheet</span> <kbd>?</kbd></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ───────────── FULLSCREEN PLAYER ───────────── -->
   <div class="fullscreen-player" id="fullscreenPlayer" hidden>
     <canvas class="fs-canvas" id="fsDynamicCanvas" aria-hidden="true"></canvas>
@@ -385,6 +561,18 @@
           </button>
         </div>
         <div class="fs-head-actions">
+          <button class="icon-btn" id="fsRadioBtn" title="Start Station / Radio" aria-label="Start Radio">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a10 10 0 0 0-7.07 17.07l1.41-1.41A8 8 0 1 1 12 20v2a10 10 0 0 0 0-20zm0 4a6 6 0 0 0-4.24 10.24l1.41-1.41A4 4 0 1 1 12 16v2a6 6 0 0 0 0-12zm0 4a2 2 0 1 0 2 2 2 2 0 0 0-2-2z"/></svg>
+          </button>
+          <button class="icon-btn" id="fsEqBtn" title="Audio Equalizer & Speed" aria-label="Audio Equalizer">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>
+          </button>
+          <button class="icon-btn" id="fsSleepTimerBtn" title="Sleep Timer" aria-label="Sleep Timer">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
+          </button>
+          <button class="icon-btn" id="fsShareBtn" title="Share Track" aria-label="Share Track">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+          </button>
           <button class="icon-btn" id="fsVisualFxBtn" title="Toggle Visualizer Mode" aria-label="Toggle Visualizer Mode">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.22 19.64 10.56 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/></svg>
           </button>

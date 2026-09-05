@@ -47,6 +47,17 @@ const els = {
   scrim: $('scrim'),
   fullscreenBtn: $('fullscreenBtn'),
   playerSaveBtn: $('playerSaveBtn'),
+  radioBtn: $('radioBtn'),
+  eqBtn: $('eqBtn'),
+  sleepTimerBtn: $('sleepTimerBtn'),
+  sleepBadge: $('sleepBadge'),
+  shareBtn: $('shareBtn'),
+  shortcutsBtn: $('shortcutsBtn'),
+  recentlyPlayed: $('recentlyPlayed'),
+  recentList: $('recentList'),
+  clearRecentBtn: $('clearRecentBtn'),
+  clearQueueBtn: $('clearQueueBtn'),
+  autoplayToggle: $('autoplayToggle'),
 };
 
 const fsEls = {
@@ -58,6 +69,10 @@ const fsEls = {
   viewArtBtn: $('fsViewArtBtn'),
   viewLyricsBtn: $('fsViewLyricsBtn'),
   visualFxBtn: $('fsVisualFxBtn'),
+  radioBtn: $('fsRadioBtn'),
+  eqBtn: $('fsEqBtn'),
+  sleepTimerBtn: $('fsSleepTimerBtn'),
+  shareBtn: $('fsShareBtn'),
   stage: $('fsStage'),
   artWrapper: $('fsArtWrapper'),
   art: $('fsArt'),
@@ -86,6 +101,35 @@ const fsEls = {
   nativeBtn: $('fsNativeBtn'),
 };
 
+const eqEls = {
+  modal: $('eqModal'),
+  closeBtn: $('closeEqModal'),
+  doneBtn: $('doneEqBtn'),
+  resetBtn: $('resetEqBtn'),
+  presets: $('eqPresets'),
+  spatialToggle: $('spatialAudioToggle'),
+  bass: $('eqBass'),
+  bassVal: $('eqBassVal'),
+  mid: $('eqMid'),
+  midVal: $('eqMidVal'),
+  treble: $('eqTreble'),
+  trebleVal: $('eqTrebleVal'),
+  speedChips: $('eqSpeedChips'),
+};
+
+const sleepEls = {
+  modal: $('sleepTimerModal'),
+  closeBtn: $('closeSleepModal'),
+  status: $('sleepModalStatus'),
+  options: $('sleepOptions'),
+  offBtn: $('sleepOffBtn'),
+};
+
+const shortcutEls = {
+  modal: $('shortcutsModal'),
+  closeBtn: $('closeShortcutsModal'),
+};
+
 const state = {
   tracks: [],
   queue: [],
@@ -98,6 +142,23 @@ const state = {
   inFlight: null,
   user: null,
   playlists: [],
+  autoplay: true,
+  sleepTimer: {
+    active: false,
+    remainingSeconds: 0,
+    endOfTrack: false,
+    intervalId: null,
+    targetTimestamp: null,
+    originalVolume: 0.7,
+  },
+  eq: {
+    preset: 'flat',
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    spatial: false,
+    speed: 1.0,
+  },
   lyrics: {
     trackId: null,
     loading: false,
@@ -279,6 +340,11 @@ function playCurrent() {
   if (t.duration_ms) {
     els.durTime.textContent = fmt(t.duration_ms / 1000);
   }
+  if (typeof initWebAudio === 'function') initWebAudio();
+  if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  audio.playbackRate = state.eq.speed || 1.0;
   audio.src = t.preview;
   audio.play().then(() => {
     state.isPlaying = true;
@@ -288,6 +354,7 @@ function playCurrent() {
     updatePlayerUI();
   });
   updatePlayerUI();
+  if (typeof addToRecentlyPlayed === 'function') addToRecentlyPlayed(t);
   if (typeof fetchLyricsForTrack === 'function') fetchLyricsForTrack(t);
   if (typeof extractColorsFromCover === 'function') extractColorsFromCover(t.cover);
 }
@@ -374,7 +441,22 @@ els.loopBtn.addEventListener('click', () => {
   showToast(state.loop ? 'Loop on' : 'Loop off');
 });
 
-audio.addEventListener('ended', () => { if (state.loop) { audio.play(); return; } nextTrack(); });
+audio.addEventListener('ended', () => {
+  if (state.sleepTimer && state.sleepTimer.active && state.sleepTimer.endOfTrack) {
+    audio.pause();
+    if (typeof cancelSleepTimer === 'function') cancelSleepTimer(false);
+    showToast('Sleep timer reached end of song. Goodnight! 🌙');
+    return;
+  }
+  if (state.loop) { audio.play(); return; }
+  if (state.autoplay && state.currentIdx >= state.queue.length - 1) {
+    if (typeof triggerAutoplayAdvance === 'function') {
+      triggerAutoplayAdvance();
+      return;
+    }
+  }
+  nextTrack();
+});
 audio.addEventListener('timeupdate', () => {
   if (!audio.duration) return;
   const pct = (audio.currentTime / audio.duration) * 100;
@@ -505,6 +587,25 @@ els.mobileQueue.addEventListener('click', openQueue);
 els.closeQueue.addEventListener('click', closeQueue);
 els.scrim.addEventListener('click', closeQueue);
 
+if (els.clearQueueBtn) {
+  els.clearQueueBtn.addEventListener('click', () => {
+    state.queue = [];
+    state.currentIdx = -1;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    updatePlayerUI();
+    showToast('Queue cleared');
+  });
+}
+
+if (els.autoplayToggle) {
+  els.autoplayToggle.addEventListener('change', () => {
+    state.autoplay = els.autoplayToggle.checked;
+    showToast(state.autoplay ? 'Autoplay similar tracks enabled ✨' : 'Autoplay disabled');
+  });
+}
+
 /* =====================================================================
    Theme
    ===================================================================== */
@@ -518,18 +619,57 @@ els.themeToggle.addEventListener('click', () => {
 });
 
 /* =====================================================================
-   Keyboard
+   Keyboard Shortcuts (Spotify & Apple Music Web Style)
    ===================================================================== */
 window.addEventListener('keydown', (e) => {
   const tag = (document.activeElement?.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea') return;
-  if (e.code === 'Space') { e.preventDefault(); els.playBtn.click(); }
-  else if (e.code === 'ArrowRight') nextTrack();
-  else if (e.code === 'ArrowLeft') prevTrack();
-  else if (e.key === 'm' || e.key === 'M') els.muteBtn.click();
-  else if (e.key === 'q' || e.key === 'Q') els.queueBtn.click();
+
+  if (e.code === 'Space') {
+    e.preventDefault();
+    els.playBtn.click();
+  }
+  else if (e.shiftKey && e.code === 'ArrowRight') {
+    if (audio.duration) {
+      audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+      showToast('+5s ⏩');
+    }
+  }
+  else if (e.shiftKey && e.code === 'ArrowLeft') {
+    if (audio.duration) {
+      audio.currentTime = Math.max(0, audio.currentTime - 5);
+      showToast('-5s ⏪');
+    }
+  }
+  else if (e.code === 'ArrowRight') {
+    nextTrack();
+  }
+  else if (e.code === 'ArrowLeft') {
+    prevTrack();
+  }
+  else if (e.key === 'm' || e.key === 'M') {
+    els.muteBtn.click();
+  }
+  else if (e.key === 'q' || e.key === 'Q') {
+    els.queueBtn.click();
+  }
+  else if (e.key === 'e' || e.key === 'E') {
+    if (eqEls.modal) eqEls.modal.hidden = !eqEls.modal.hidden;
+  }
+  else if (e.key === 's' || e.key === 'S') {
+    if (sleepEls.modal) sleepEls.modal.hidden = !sleepEls.modal.hidden;
+  }
+  else if (e.key === 'r' || e.key === 'R') {
+    if (typeof startRadioForTrack === 'function') startRadioForTrack();
+  }
+  else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+    if (shortcutEls.modal) shortcutEls.modal.hidden = !shortcutEls.modal.hidden;
+  }
   else if (e.key === 'Escape') {
     if (fsEls.container && !fsEls.container.hidden) closeFullscreenPlayer();
+    else if (shortcutEls.modal && !shortcutEls.modal.hidden) shortcutEls.modal.hidden = true;
+    else if (eqEls.modal && !eqEls.modal.hidden) eqEls.modal.hidden = true;
+    else if (sleepEls.modal && !sleepEls.modal.hidden) sleepEls.modal.hidden = true;
     else if (authEls.modal && !authEls.modal.hidden) closeAuth();
     else if (authEls.newPlModal && !authEls.newPlModal.hidden) authEls.newPlModal.hidden = true;
     else if (authEls.detailModal && !authEls.detailModal.hidden) authEls.detailModal.hidden = true;
@@ -557,6 +697,485 @@ function showToast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => els.toast.classList.remove('show'), 1800);
 }
+
+/* =====================================================================
+   Spotify & Apple Music Feature Suite:
+   1. Web Audio Equalizer, Speed & Spatial Audio
+   2. Sleep Timer with Smooth Volume Fade
+   3. Smart Infinite Station / Radio & Autoplay
+   4. Recently Played Shelf (Local-First Listening History)
+   5. 1-Click Track Sharing & Deep Linking
+   6. Keyboard Shortcuts Modal & Event Handlers
+   ===================================================================== */
+
+/* 1. Web Audio Equalizer & Spatial Audio Engine */
+let audioCtx = null;
+let sourceNode = null;
+let bassNode = null;
+let midNode = null;
+let trebleNode = null;
+let webAudioReady = false;
+
+function initWebAudio() {
+  if (webAudioReady) return;
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    audioCtx = new AudioContextClass();
+
+    audio.crossOrigin = 'anonymous';
+    sourceNode = audioCtx.createMediaElementSource(audio);
+
+    // 150 Hz Lowshelf filter
+    bassNode = audioCtx.createBiquadFilter();
+    bassNode.type = 'lowshelf';
+    bassNode.frequency.value = 150;
+    bassNode.gain.value = state.eq.bass;
+
+    // 1000 Hz Peaking filter
+    midNode = audioCtx.createBiquadFilter();
+    midNode.type = 'peaking';
+    midNode.frequency.value = 1000;
+    midNode.Q.value = 1.0;
+    midNode.gain.value = state.eq.mid;
+
+    // 3500 Hz Highshelf filter
+    trebleNode = audioCtx.createBiquadFilter();
+    trebleNode.type = 'highshelf';
+    trebleNode.frequency.value = 3500;
+    trebleNode.gain.value = state.eq.treble;
+
+    // Connect source -> bass -> mid -> treble -> destination
+    sourceNode.connect(bassNode);
+    bassNode.connect(midNode);
+    midNode.connect(trebleNode);
+    trebleNode.connect(audioCtx.destination);
+
+    webAudioReady = true;
+  } catch (err) {
+    console.warn('Web Audio API not supported or CORS restricted; using standard playback:', err);
+    webAudioReady = false;
+  }
+}
+
+const EQ_PRESETS = {
+  flat:       { bass: 0,  mid: 0,  treble: 0,  spatial: false },
+  bass:       { bass: 8,  mid: -1, treble: 2,  spatial: false },
+  vocal:      { bass: -2, mid: 5,  treble: 4,  spatial: false },
+  electronic: { bass: 7,  mid: 1,  treble: 5,  spatial: false },
+  rock:       { bass: 5,  mid: 3,  treble: 4,  spatial: false },
+  acoustic:   { bass: 2,  mid: 4,  treble: 2,  spatial: false },
+};
+
+function applyEqPreset(name) {
+  const p = EQ_PRESETS[name];
+  if (!p) return;
+  state.eq.preset = name;
+  state.eq.bass = p.bass;
+  state.eq.mid = p.mid;
+  state.eq.treble = p.treble;
+  state.eq.spatial = p.spatial;
+  applyEqValues();
+
+  document.querySelectorAll('.eq-chip').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === name);
+  });
+}
+
+function applyEqValues() {
+  if (bassNode) bassNode.gain.value = state.eq.bass;
+  if (midNode) midNode.gain.value = state.eq.mid;
+  if (trebleNode) trebleNode.gain.value = state.eq.treble;
+
+  if (eqEls.bass) eqEls.bass.value = state.eq.bass;
+  if (eqEls.bassVal) eqEls.bassVal.textContent = (state.eq.bass > 0 ? '+' : '') + state.eq.bass + ' dB';
+  if (eqEls.mid) eqEls.mid.value = state.eq.mid;
+  if (eqEls.midVal) eqEls.midVal.textContent = (state.eq.mid > 0 ? '+' : '') + state.eq.mid + ' dB';
+  if (eqEls.treble) eqEls.treble.value = state.eq.treble;
+  if (eqEls.trebleVal) eqEls.trebleVal.textContent = (state.eq.treble > 0 ? '+' : '') + state.eq.treble + ' dB';
+
+  if (eqEls.spatialToggle) eqEls.spatialToggle.checked = state.eq.spatial;
+  if (audio) audio.playbackRate = state.eq.speed || 1.0;
+}
+
+function setPlaybackSpeed(spd) {
+  state.eq.speed = spd;
+  if (audio) audio.playbackRate = spd;
+  document.querySelectorAll('.speed-chip').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.speed) === spd);
+  });
+  showToast(`Speed set to ${spd}x`);
+}
+
+// Wire Equalizer UI elements
+if (eqEls.presets) {
+  eqEls.presets.addEventListener('click', (e) => {
+    const btn = e.target.closest('.eq-chip');
+    if (btn && btn.dataset.preset) applyEqPreset(btn.dataset.preset);
+  });
+}
+
+if (eqEls.bass) {
+  eqEls.bass.addEventListener('input', (e) => {
+    state.eq.bass = Number(e.target.value);
+    applyEqValues();
+  });
+}
+if (eqEls.mid) {
+  eqEls.mid.addEventListener('input', (e) => {
+    state.eq.mid = Number(e.target.value);
+    applyEqValues();
+  });
+}
+if (eqEls.treble) {
+  eqEls.treble.addEventListener('input', (e) => {
+    state.eq.treble = Number(e.target.value);
+    applyEqValues();
+  });
+}
+
+if (eqEls.spatialToggle) {
+  eqEls.spatialToggle.addEventListener('change', () => {
+    state.eq.spatial = eqEls.spatialToggle.checked;
+    if (state.eq.spatial) {
+      state.eq.bass = Math.min(12, state.eq.bass + 3);
+      state.eq.treble = Math.min(12, state.eq.treble + 3);
+    } else {
+      state.eq.bass = Math.max(-12, state.eq.bass - 3);
+      state.eq.treble = Math.max(-12, state.eq.treble - 3);
+    }
+    applyEqValues();
+    showToast(state.eq.spatial ? 'Spatial Audio Active 🎧' : 'Spatial Audio Off');
+  });
+}
+
+if (eqEls.speedChips) {
+  eqEls.speedChips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.speed-chip');
+    if (chip && chip.dataset.speed) {
+      setPlaybackSpeed(Number(chip.dataset.speed));
+    }
+  });
+}
+
+if (eqEls.resetBtn) {
+  eqEls.resetBtn.addEventListener('click', () => {
+    applyEqPreset('flat');
+    setPlaybackSpeed(1.0);
+    showToast('Equalizer reset to Flat');
+  });
+}
+
+if (eqEls.closeBtn) eqEls.closeBtn.addEventListener('click', () => { eqEls.modal.hidden = true; });
+if (eqEls.doneBtn) eqEls.doneBtn.addEventListener('click', () => { eqEls.modal.hidden = true; });
+if (els.eqBtn) els.eqBtn.addEventListener('click', () => {
+  initWebAudio();
+  eqEls.modal.hidden = false;
+});
+if (fsEls.eqBtn) fsEls.eqBtn.addEventListener('click', () => {
+  initWebAudio();
+  eqEls.modal.hidden = false;
+});
+
+
+/* 2. Sleep Timer with Smooth Volume Fade */
+function setSleepTimer(minutes, endOfTrack = false) {
+  cancelSleepTimer(false);
+
+  if (endOfTrack) {
+    state.sleepTimer.active = true;
+    state.sleepTimer.endOfTrack = true;
+    state.sleepTimer.remainingSeconds = 0;
+    updateSleepUI();
+    showToast('Sleep timer set for end of current song 🌙');
+    if (sleepEls.modal) sleepEls.modal.hidden = true;
+    return;
+  }
+
+  const secs = minutes * 60;
+  state.sleepTimer.active = true;
+  state.sleepTimer.endOfTrack = false;
+  state.sleepTimer.remainingSeconds = secs;
+  state.sleepTimer.targetTimestamp = Date.now() + (secs * 1000);
+  state.sleepTimer.originalVolume = audio.volume || state.lastVolume || 0.7;
+
+  updateSleepUI();
+  showToast(`Sleep timer set for ${minutes} minutes 🌙`);
+  if (sleepEls.modal) sleepEls.modal.hidden = true;
+
+  state.sleepTimer.intervalId = setInterval(() => {
+    const remaining = Math.max(0, Math.round((state.sleepTimer.targetTimestamp - Date.now()) / 1000));
+    state.sleepTimer.remainingSeconds = remaining;
+    updateSleepUI();
+
+    // Smooth volume fade-out over last 15 seconds
+    if (remaining <= 15 && remaining > 0) {
+      const frac = remaining / 15;
+      audio.volume = state.sleepTimer.originalVolume * frac;
+      setVolUI(audio.volume);
+    }
+
+    if (remaining <= 0) {
+      clearInterval(state.sleepTimer.intervalId);
+      state.sleepTimer.intervalId = null;
+      audio.pause();
+      audio.volume = state.sleepTimer.originalVolume;
+      setVolUI(audio.volume);
+      cancelSleepTimer(false);
+      showToast('Sleep timer reached. Goodnight! 🌙');
+    }
+  }, 1000);
+}
+
+function cancelSleepTimer(showNotice = true) {
+  if (state.sleepTimer.intervalId) {
+    clearInterval(state.sleepTimer.intervalId);
+    state.sleepTimer.intervalId = null;
+  }
+  if (state.sleepTimer.originalVolume && audio) {
+    audio.volume = state.sleepTimer.originalVolume;
+    setVolUI(audio.volume);
+  }
+  state.sleepTimer.active = false;
+  state.sleepTimer.endOfTrack = false;
+  state.sleepTimer.remainingSeconds = 0;
+  state.sleepTimer.targetTimestamp = null;
+  updateSleepUI();
+  if (showNotice) showToast('Sleep timer turned off');
+}
+
+function updateSleepUI() {
+  if (!els.sleepBadge) return;
+  if (!state.sleepTimer.active) {
+    els.sleepBadge.hidden = true;
+    els.sleepBadge.textContent = '';
+    if (sleepEls.offBtn) sleepEls.offBtn.hidden = true;
+    if (sleepEls.status) sleepEls.status.textContent = 'Stops music gently so you can rest';
+    document.querySelectorAll('.sleep-btn').forEach(b => b.classList.remove('active'));
+    return;
+  }
+
+  els.sleepBadge.hidden = false;
+  if (sleepEls.offBtn) sleepEls.offBtn.hidden = false;
+
+  if (state.sleepTimer.endOfTrack) {
+    els.sleepBadge.textContent = '1x';
+    if (sleepEls.status) sleepEls.status.textContent = 'Active: Pauses when current song ends 🌙';
+    document.querySelectorAll('.sleep-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.time === 'end');
+    });
+  } else {
+    const mins = Math.ceil(state.sleepTimer.remainingSeconds / 60);
+    els.sleepBadge.textContent = `${mins}m`;
+    const m = Math.floor(state.sleepTimer.remainingSeconds / 60);
+    const s = state.sleepTimer.remainingSeconds % 60;
+    const timeStr = `${m}:${String(s).padStart(2, '0')}`;
+    if (sleepEls.status) sleepEls.status.textContent = `Active: ${timeStr} remaining 🌙`;
+    document.querySelectorAll('.sleep-btn').forEach(b => {
+      b.classList.toggle('active', Number(b.dataset.time) === Math.round(mins));
+    });
+  }
+}
+
+if (sleepEls.options) {
+  sleepEls.options.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sleep-btn');
+    if (!btn) return;
+    const val = btn.dataset.time;
+    if (val === '0') {
+      cancelSleepTimer();
+      sleepEls.modal.hidden = true;
+    } else if (val === 'end') {
+      setSleepTimer(0, true);
+    } else {
+      setSleepTimer(Number(val), false);
+    }
+  });
+}
+
+if (sleepEls.closeBtn) sleepEls.closeBtn.addEventListener('click', () => { sleepEls.modal.hidden = true; });
+if (els.sleepTimerBtn) els.sleepTimerBtn.addEventListener('click', () => { sleepEls.modal.hidden = false; });
+if (fsEls.sleepTimerBtn) fsEls.sleepTimerBtn.addEventListener('click', () => { sleepEls.modal.hidden = false; });
+
+
+/* 3. Smart Infinite Station / Radio & Autoplay */
+async function startRadioForTrack(seedTrack) {
+  if (!seedTrack) seedTrack = state.queue[state.currentIdx];
+  if (!seedTrack) {
+    showToast('Play or search a song first to start radio 📻');
+    return;
+  }
+
+  showToast(`Tuning into ${seedTrack.artist} station... 📻`);
+  try {
+    const res = await fetch(`${API}/radio?title=${encodeURIComponent(seedTrack.title)}&artist=${encodeURIComponent(seedTrack.artist)}&genre=${encodeURIComponent(seedTrack.genre || '')}&track_id=${encodeURIComponent(seedTrack.id || '')}`);
+    if (!res.ok) throw new Error('Station currently unavailable');
+    const data = await res.json();
+    const tracks = data.results || [];
+    if (!tracks.length) throw new Error('No similar tracks found');
+
+    state.queue = [seedTrack, ...tracks];
+    state.currentIdx = 0;
+    playCurrent();
+    showToast(`Radio started! Added ${tracks.length} tracks to station 📻`);
+  } catch (err) {
+    showToast(err.message || 'Radio error');
+  }
+}
+
+async function triggerAutoplayAdvance() {
+  const current = state.queue[state.currentIdx];
+  if (!current) return nextTrack();
+  try {
+    const res = await fetch(`${API}/radio?title=${encodeURIComponent(current.title)}&artist=${encodeURIComponent(current.artist)}&genre=${encodeURIComponent(current.genre || '')}&track_id=${encodeURIComponent(current.id || '')}`);
+    if (!res.ok) return nextTrack();
+    const data = await res.json();
+    const fresh = (data.results || []).filter(t => !state.queue.some(q => q.id === t.id));
+    if (fresh.length > 0) {
+      state.queue.push(...fresh);
+      renderQueue();
+      state.currentIdx++;
+      playCurrent();
+      showToast('Autoplay queued similar tracks ✨');
+    } else {
+      nextTrack();
+    }
+  } catch {
+    nextTrack();
+  }
+}
+
+if (els.radioBtn) els.radioBtn.addEventListener('click', () => startRadioForTrack());
+if (fsEls.radioBtn) fsEls.radioBtn.addEventListener('click', () => startRadioForTrack());
+
+
+/* 4. Recently Played Shelf (Local-First Listening History) */
+const RECENT_STORAGE_KEY = 'songplay_recently_played_v1';
+
+function getRecentlyPlayed() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_STORAGE_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function addToRecentlyPlayed(track) {
+  if (!track || !track.title) return;
+  let list = getRecentlyPlayed();
+  list = list.filter(t => t.id !== track.id && !(t.title === track.title && t.artist === track.artist));
+  list.unshift({ ...track, playedAt: Date.now() });
+  if (list.length > 20) list = list.slice(0, 20);
+  try {
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(list));
+  } catch {}
+  renderRecentlyPlayed();
+}
+
+function renderRecentlyPlayed() {
+  const list = getRecentlyPlayed();
+  if (!list.length) {
+    if (els.recentlyPlayed) els.recentlyPlayed.hidden = true;
+    return;
+  }
+  if (els.recentlyPlayed) els.recentlyPlayed.hidden = false;
+  if (!els.recentList) return;
+
+  els.recentList.innerHTML = '';
+  list.forEach((t) => {
+    const card = document.createElement('div');
+    card.className = 'recent-card';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.innerHTML = `
+      <div class="recent-art">
+        <img loading="lazy" alt="" src="${esc(t.cover)}" onerror="this.style.display='none'">
+        <div class="play-overlay"><div class="pp">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </div></div>
+      </div>
+      <div class="name">${esc(t.title)}</div>
+      <div class="sub">${esc(t.artist)}</div>
+      <div class="time-ago">${formatTimeAgo(t.playedAt)}</div>
+    `;
+    card.addEventListener('click', () => {
+      state.queue = [t, ...state.queue.filter(x => x.id !== t.id)];
+      state.currentIdx = 0;
+      playCurrent();
+    });
+    els.recentList.appendChild(card);
+  });
+}
+
+function formatTimeAgo(ts) {
+  if (!ts) return 'Recent';
+  const diffSec = Math.floor((Date.now() - ts) / 1000);
+  if (diffSec < 60) return 'Just now';
+  const mins = Math.floor(diffSec / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+if (els.clearRecentBtn) {
+  els.clearRecentBtn.addEventListener('click', () => {
+    localStorage.removeItem(RECENT_STORAGE_KEY);
+    renderRecentlyPlayed();
+    showToast('Cleared listening history');
+  });
+}
+
+
+/* 5. 1-Click Track Sharing & Deep Linking */
+function shareTrack(track) {
+  if (!track) track = state.queue[state.currentIdx];
+  if (!track) {
+    showToast('Play a song first to share');
+    return;
+  }
+  const shareUrl = `${window.location.origin}${window.location.pathname}?q=${encodeURIComponent(track.title + ' ' + track.artist)}&play=1`;
+  if (navigator.share) {
+    navigator.share({
+      title: `${track.title} • ${track.artist}`,
+      text: `Listen to "${track.title}" by ${track.artist} on SongPlay`,
+      url: shareUrl,
+    }).catch(() => {});
+  } else if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      showToast(`Copied link for "${track.title}"! 🔗`);
+    }).catch(() => {
+      showToast('Unable to copy link');
+    });
+  } else {
+    prompt('Copy song link:', shareUrl);
+  }
+}
+
+if (els.shareBtn) els.shareBtn.addEventListener('click', () => shareTrack());
+if (fsEls.shareBtn) fsEls.shareBtn.addEventListener('click', () => shareTrack());
+
+function handleDeepLinking() {
+  const params = new URLSearchParams(window.location.search);
+  const q = (params.get('q') || '').trim();
+  const autoPlay = params.get('play') === '1';
+
+  if (q) {
+    els.input.value = q;
+    doSearch(q, `"${q}"`).then(() => {
+      if (autoPlay && state.tracks && state.tracks.length > 0) {
+        state.queue = state.tracks.slice();
+        state.currentIdx = 0;
+        playCurrent();
+      }
+    });
+  }
+}
+
+
+/* 6. Keyboard Shortcuts Modal */
+if (els.shortcutsBtn) els.shortcutsBtn.addEventListener('click', () => { shortcutEls.modal.hidden = false; });
+if (shortcutEls.closeBtn) shortcutEls.closeBtn.addEventListener('click', () => { shortcutEls.modal.hidden = true; });
 
 /* =====================================================================
    Auth & Playlists with Resilient Local-First Auto-Sync
@@ -1570,5 +2189,11 @@ window.addEventListener('keydown', (e) => {
 renderQueue();
 loadMoods();
 checkAuth();
-doSearch('top hits 2025', 'Trending today');
+renderRecentlyPlayed();
+applyEqValues();
+handleDeepLinking();
+const urlParams = new URLSearchParams(window.location.search);
+if (!urlParams.get('q')) {
+  doSearch('top hits 2025', 'Trending today');
+}
 
